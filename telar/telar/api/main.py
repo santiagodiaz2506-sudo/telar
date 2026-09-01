@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI, Request, Response
 
+from telar.accounts.router import router as accounts_router
 from telar.auth.router import router as auth_router
 from telar.channels.meta import default_adapter
 from telar.config import settings
@@ -103,3 +104,4 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Telar", version="0.1.0", lifespan=lifespan)
 app.include_router(router)
 app.include_router(auth_router)
+app.include_router(accounts_router)

@@ -175,13 +175,7 @@ Como todavía no hay API de administración ni registro, el primer usuario se cr
 python -m telar.auth.create_user admin@tuempresa.com "Nombre Apellido" --superadmin
 ```
 
-Pide la contraseña por consola (no queda en el historial de la shell). Para vincularlo a una cuenta con un rol:
-
-```sql
-INSERT INTO account_users (account_id, user_id, role) VALUES ('<account_id>', '<user_id>', 'administrator');
-```
-
-Con eso ya podés loguearte:
+Pide la contraseña por consola (no queda en el historial de la shell). Con eso ya podés loguearte:
 
 ```bash
 curl -X POST http://localhost:8000/auth/login \
@@ -190,6 +184,37 @@ curl -X POST http://localhost:8000/auth/login \
 ```
 
 Devuelve un `access_token` (JWT, expira en 24h por defecto — `JWT_EXPIRE_MINUTES`). Se manda como `Authorization: Bearer <token>` en cada request a un endpoint protegido, por ejemplo `GET /auth/me`.
+
+## Cuentas, equipos y roles
+
+Crear una cuenta nueva es solo para superadmin — es el modelo pensado para vender el servicio: vos hosteás todo y cada cliente nuevo es una cuenta que das de alta.
+
+```bash
+curl -X POST http://localhost:8000/accounts \
+  -H "Authorization: Bearer <token-de-superadmin>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Mi empresa"}'
+```
+
+Para sumar gente a una cuenta, primero se crea el usuario con `create_user.py` (todavía no hay invitación por email) y después se lo suma con un rol — esto ya lo puede hacer un `administrator` de la cuenta, no hace falta ser superadmin:
+
+```bash
+curl -X POST http://localhost:8000/accounts/<account_id>/members \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "agente@tuempresa.com", "role": "agent"}'
+```
+
+Qué puede hacer cada rol dentro de una cuenta:
+
+| | `administrator` | `supervisor` | `agent` |
+|---|---|---|---|
+| Ver miembros y equipos | ✅ | ✅ | ✅ |
+| Sumar/sacar miembros de la cuenta | ✅ | ❌ | ❌ |
+| Crear equipos | ✅ | ❌ | ❌ |
+| Sumar/sacar gente de un equipo | ✅ | ✅ | ❌ |
+
+`is_superadmin` (flag en `users`, no un rol de cuenta) tiene bypass sobre todo lo anterior en cualquier cuenta, incluso sin pertenecer a ella.
 
 ## Anti-abuso
 
@@ -239,7 +264,7 @@ Si agregás o editás una tool, hace falta reiniciar el proceso de la API para q
 - [x] Bases de conocimiento con pgvector, expuestas como herramienta del agente
 - [x] Herramientas configurables por HTTP y SQL
 - [ ] Bandeja de entrada, contactos e informes
-- [ ] Cuentas, equipos y roles (superadmin, administrador, supervisor, asesor)
+- [x] Cuentas, equipos y roles (superadmin, administrador, supervisor, asesor)
 - [ ] Compilador de grafos desde JSON
 - [ ] Constructor visual de flujos
 
