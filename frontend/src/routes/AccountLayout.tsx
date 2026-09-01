@@ -37,6 +37,11 @@ export function AccountLayout() {
             <NavLink to={`/accounts/${accountId}/contacts`} className={navLinkClass}>
               Contactos
             </NavLink>
+            {(role === 'administrator' || role === 'superadmin') && (
+              <NavLink to={`/accounts/${accountId}/bot`} className={navLinkClass}>
+                Flujo del bot
+              </NavLink>
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -48,7 +53,7 @@ export function AccountLayout() {
           </Button>
         </div>
       </header>
-      <main className="flex-1 overflow-hidden">
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Outlet />
       </main>
     </div>

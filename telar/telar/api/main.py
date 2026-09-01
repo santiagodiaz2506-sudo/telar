@@ -10,6 +10,7 @@ from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from telar.accounts.router import router as accounts_router
+from telar.agent.router import router as agent_router
 from telar.auth.router import router as auth_router
 from telar.channels.meta import default_adapter
 from telar.conversations.router import router as conversations_router
@@ -115,3 +116,4 @@ app.include_router(router)
 app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(conversations_router)
+app.include_router(agent_router)

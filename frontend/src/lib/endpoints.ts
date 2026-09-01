@@ -1,6 +1,9 @@
 import { apiFetch } from '@/lib/api'
 import type {
   AccountResponse,
+  AvailableToolResponse,
+  BotGraph,
+  BotResponse,
   ConversationDetailResponse,
   ConversationResponse,
   ConversationStatusResponse,
@@ -76,4 +79,19 @@ export function getContacts(accountId: string) {
 
 export function getStats(accountId: string) {
   return apiFetch<StatsResponse>(`/accounts/${accountId}/stats`)
+}
+
+export function getBot(accountId: string) {
+  return apiFetch<BotResponse | null>(`/accounts/${accountId}/bot`)
+}
+
+export function saveBot(accountId: string, name: string, graph: BotGraph) {
+  return apiFetch<BotResponse>(`/accounts/${accountId}/bot`, {
+    method: 'PUT',
+    body: JSON.stringify({ name, graph }),
+  })
+}
+
+export function getAvailableTools(accountId: string) {
+  return apiFetch<AvailableToolResponse[]>(`/accounts/${accountId}/bot/available-tools`)
 }

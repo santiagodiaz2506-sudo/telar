@@ -77,6 +77,35 @@ export interface ContactResponse {
   phone: string | null
 }
 
+export interface GraphNode {
+  id: string
+  type: 'agent'
+  system_prompt?: string | null
+  tools?: string[] | null
+}
+
+export interface GraphEdge {
+  from: string
+  to: string
+}
+
+export interface BotGraph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
+export interface BotResponse {
+  id: string
+  name: string
+  version: number
+  graph: BotGraph
+}
+
+export interface AvailableToolResponse {
+  name: string
+  description: string
+}
+
 export interface StatsResponse {
   bot: number
   pending: number

@@ -660,3 +660,33 @@ async def get_active_bot_graph(account_id: UUID) -> dict | None:
         )
         rows = await cur.fetchall()
     return rows[0][0] if rows else None
+
+
+async def get_bot_for_account(account_id: UUID) -> dict | None:
+    """
+    El bot de la cuenta, sin importar el nombre -- a propósito, para que
+    "un bot por cuenta" sea la única forma de crear uno desde acá (el CLI
+    deploy_bot.py sigue permitiendo varios por nombre si alguien lo usa
+    directo, pero el editor visual no hereda esa ambigüedad).
+    """
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, name, active_version_id FROM bots WHERE account_id = %s",
+            (account_id,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def get_bot_version(version_id: UUID) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, bot_id, version, graph FROM bot_versions WHERE id = %s",
+            (version_id,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None

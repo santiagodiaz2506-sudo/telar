@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { AccountLayout } from '@/routes/AccountLayout'
 import { AccountPickerPage } from '@/routes/AccountPickerPage'
+import { BotFlowPage } from '@/routes/BotFlowPage'
 import { ContactsPage } from '@/routes/ContactsPage'
 import { ConversationDetailPage } from '@/routes/ConversationDetailPage'
 import { ConversationsPage } from '@/routes/ConversationsPage'
@@ -19,6 +20,7 @@ function App() {
         <Route path="conversations" element={<ConversationsPage />} />
         <Route path="conversations/:conversationId" element={<ConversationDetailPage />} />
         <Route path="contacts" element={<ContactsPage />} />
+        <Route path="bot" element={<BotFlowPage />} />
       </Route>
     </Routes>
   )
