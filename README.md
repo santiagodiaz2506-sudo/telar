@@ -200,14 +200,46 @@ Nada de esto reemplaza un reverse proxy/CDN delante en producción (rate limitin
 - **Login**: `LOGIN_RATE_LIMIT_ATTEMPTS` intentos por IP cada `LOGIN_RATE_LIMIT_WINDOW_SECONDS` (default 5 cada 15 minutos).
 - **Body del webhook**: se rechaza con `413` antes de leerlo si supera `WEBHOOK_MAX_BODY_BYTES` (default 64 KB).
 
+## Herramientas configurables
+
+Cada cuenta puede definir sus propias tools de tipo `http` (llamar una API externa) o `sql` (consultar su propia base de datos externa — Telar no tiene datos de negocio propios). El agente decide cuándo llamarlas, igual que con `escalar_a_humano` y `consultar_base_de_conocimiento`.
+
+Como todavía no hay API de administración, se crean desde un archivo JSON local:
+
+```json
+{
+  "name": "consultar_pedido",
+  "description": "Busca el estado de un pedido por su número.",
+  "kind": "http",
+  "config": {"url": "https://api.tuempresa.com/pedidos", "method": "GET"},
+  "secret": {"headers": {"Authorization": "Bearer ..."}},
+  "schema": {
+    "properties": {"order_id": {"type": "string", "description": "número de pedido"}},
+    "required": ["order_id"]
+  }
+}
+```
+
+```bash
+python -m telar.custom_tools.create_tool <account_id> tool.json
+```
+
+El archivo queda con un secreto real en texto plano — borralo después de correr el script. Lo sensible (`secret`) se cifra con Fernet antes de guardarse (`ENCRYPTION_KEY`, mismo mecanismo pensado para los tokens de Meta).
+
+Dos restricciones deliberadas, no configurables:
+- **`sql` es siempre de solo lectura**, exigido por Postgres a nivel de transacción (`READ ONLY`), no por un chequeo de texto — un intento de escritura falla aunque la query esté mal escrita a propósito. Solo se soporta Postgres.
+- **`http` no puede apuntar a IPs privadas/internas** (loopback, RFC1918, metadata de la nube) — se revisa en cada llamada, no solo al guardar la config.
+
+Si agregás o editás una tool, hace falta reiniciar el proceso de la API para que la cuenta la vea (el grafo del agente se arma una vez por cuenta, en memoria).
+
 ## Hoja de ruta
 
 - [x] Gateway de WhatsApp con agente configurable
 - [x] Máquina de estados del traspaso
 - [x] Bases de conocimiento con pgvector, expuestas como herramienta del agente
+- [x] Herramientas configurables por HTTP y SQL
 - [ ] Bandeja de entrada, contactos e informes
 - [ ] Cuentas, equipos y roles (superadmin, administrador, supervisor, asesor)
-- [ ] Herramientas configurables por HTTP y SQL
 - [ ] Compilador de grafos desde JSON
 - [ ] Constructor visual de flujos
 

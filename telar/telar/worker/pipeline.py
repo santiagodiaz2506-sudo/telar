@@ -20,6 +20,7 @@ from telar.channels.meta import MetaWhatsAppAdapter
 from telar.config import settings
 from telar.core import state as st
 from telar.core.types import InboundMessage, OutboundMessage, SenderType
+from telar.custom_tools.loader import build_custom_tools
 from telar.db import repositories as repo
 from telar.db.pool import get_pool
 
@@ -29,20 +30,32 @@ log = logging.getLogger(__name__)
 class Pipeline:
     def __init__(self, adapter: MetaWhatsAppAdapter) -> None:
         self.adapter = adapter
-        self._graph = None
+        # Un grafo por cuenta: cada una puede tener sus propias tools
+        # configurables, y bind_tools() necesita conocer la lista completa
+        # de antemano. Limitación v0: si se agrega/edita una tool hace
+        # falta reiniciar el proceso para que la cuenta la vea.
+        self._graphs: dict[str, object] = {}
+        self._checkpointer = None
         # Tope global de invocaciones concurrentes al LLM: protege el pool
         # de Postgres y el rate limit del proveedor de un pico de tráfico.
         self._semaphore = asyncio.Semaphore(
             settings().rate_limit_max_concurrent_agent_calls
         )
 
-    async def _get_graph(self):
-        if self._graph is None:
+    async def _get_checkpointer(self):
+        if self._checkpointer is None:
             pool = await get_pool()
-            checkpointer = AsyncPostgresSaver(pool)
-            await checkpointer.setup()
-            self._graph = build_graph(checkpointer=checkpointer)
-        return self._graph
+            self._checkpointer = AsyncPostgresSaver(pool)
+            await self._checkpointer.setup()
+        return self._checkpointer
+
+    async def _get_graph(self, account_id):
+        key = str(account_id)
+        if key not in self._graphs:
+            checkpointer = await self._get_checkpointer()
+            extra_tools = await build_custom_tools(account_id)
+            self._graphs[key] = build_graph(checkpointer=checkpointer, extra_tools=extra_tools)
+        return self._graphs[key]
 
     async def handle(self, batch: list[InboundMessage]) -> None:
         first = batch[0]
@@ -78,7 +91,7 @@ class Pipeline:
             return
 
         text = "\n".join(m.as_agent_text() for m in new_messages)
-        graph = await self._get_graph()
+        graph = await self._get_graph(conv.account_id)
 
         async with self._semaphore:
             result = await graph.ainvoke(

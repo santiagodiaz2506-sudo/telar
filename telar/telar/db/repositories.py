@@ -5,6 +5,7 @@ una query visible enseña más que un ORM que hay que aprender.
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from psycopg.rows import dict_row
@@ -290,6 +291,49 @@ async def insert_user(
             RETURNING id
             """,
             (email, name, password_hash, is_superadmin),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def get_tools_for_account(account_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, name, description, kind, config, schema, secret_config "
+            "FROM tools WHERE account_id = %s AND enabled = true",
+            (account_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def insert_tool(
+    account_id: UUID,
+    name: str,
+    description: str,
+    kind: str,
+    config: dict,
+    secret_config: bytes | None,
+    schema: dict,
+) -> UUID:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO tools (account_id, name, description, kind, config, secret_config, schema)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (
+                account_id,
+                name,
+                description,
+                kind,
+                json.dumps(config),
+                secret_config,
+                json.dumps(schema),
+            ),
         )
         row = await cur.fetchone()
     return row[0]

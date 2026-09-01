@@ -27,8 +27,9 @@ class AgentState(TypedDict):
     account_id: str
 
 
-def build_graph(model_spec: str | None = None, checkpointer=None):
-    model = get_model(model_spec).bind_tools(TOOLS)
+def build_graph(model_spec: str | None = None, checkpointer=None, extra_tools: list | None = None):
+    tools = TOOLS + (extra_tools or [])
+    model = get_model(model_spec).bind_tools(tools)
 
     async def agent(state: AgentState):
         messages = [SystemMessage(content=state["system_prompt"]), *state["messages"]]
@@ -40,7 +41,7 @@ def build_graph(model_spec: str | None = None, checkpointer=None):
 
     graph = StateGraph(AgentState)
     graph.add_node("agent", agent)
-    graph.add_node("tools", ToolNode(TOOLS))
+    graph.add_node("tools", ToolNode(tools))
     graph.add_edge(START, "agent")
     graph.add_conditional_edges("agent", route, {"tools": "tools", END: END})
     graph.add_edge("tools", "agent")
