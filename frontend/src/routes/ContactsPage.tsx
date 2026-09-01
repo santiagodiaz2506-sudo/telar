@@ -1,6 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { Search, Users, X } from 'lucide-react'
+import * as React from 'react'
+import { Link, useParams } from 'react-router-dom'
 
+import { EmptyState } from '@/components/EmptyState'
+import { ContactAvatar } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
   TableBody,
@@ -9,10 +15,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { getContacts } from '@/lib/endpoints'
+import { getContacts, getConversations } from '@/lib/endpoints'
+import { formatPhone } from '@/lib/format'
 
 export function ContactsPage() {
   const { accountId } = useParams<{ accountId: string }>()
+  const [query, setQuery] = React.useState('')
 
   const { data: contacts, isLoading } = useQuery({
     queryKey: ['contacts', accountId],
@@ -20,34 +28,137 @@ export function ContactsPage() {
     enabled: !!accountId,
   })
 
+  /* Para poder saltar del contacto a su conversación sin buscarla a mano. */
+  const { data: conversations } = useQuery({
+    queryKey: ['conversations', accountId, 'all'],
+    queryFn: () => getConversations(accountId!),
+    enabled: !!accountId,
+  })
+
+  const conversationByContact = React.useMemo(() => {
+    const map = new Map<string, string>()
+    conversations?.forEach((c) => map.set(c.contact_id, c.id))
+    return map
+  }, [conversations])
+
+  const visible = React.useMemo(() => {
+    if (!contacts) return []
+    const q = query.trim().toLowerCase()
+    if (!q) return contacts
+    return contacts.filter(
+      (c) =>
+        c.name?.toLowerCase().includes(q) ||
+        c.phone?.replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
+        c.external_id.includes(q),
+    )
+  }, [contacts, query])
+
   if (!accountId) return null
 
   return (
-    <div className="h-full overflow-y-auto p-4">
-      {isLoading && <p className="text-sm text-muted-foreground">Cargando...</p>}
-      {contacts && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Nombre</TableHead>
-              <TableHead>Teléfono</TableHead>
-              <TableHead>ID de WhatsApp</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {contacts.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell>{c.name ?? '—'}</TableCell>
-                <TableCell>{c.phone ?? '—'}</TableCell>
-                <TableCell className="text-muted-foreground">{c.external_id}</TableCell>
-              </TableRow>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-5">
+        <h1 className="text-[15px] font-semibold tracking-tight">Contactos</h1>
+        {contacts && (
+          <span className="tabular rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
+            {contacts.length}
+          </span>
+        )}
+        <div className="relative ml-auto w-64">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Buscar contacto"
+            aria-label="Buscar contactos"
+            className="h-8 w-full rounded-md border border-border bg-background pr-8 pl-8 text-[13px] outline-none placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
+          />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              aria-label="Limpiar búsqueda"
+              className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
+        {isLoading && (
+          <div className="space-y-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-12 rounded-lg" />
             ))}
-          </TableBody>
-        </Table>
-      )}
-      {contacts?.length === 0 && (
-        <p className="text-sm text-muted-foreground">No hay contactos todavía.</p>
-      )}
+          </div>
+        )}
+
+        {!isLoading && visible.length === 0 && (
+          <EmptyState
+            icon={Users}
+            title={query ? 'Ningún contacto coincide' : 'Todavía no hay contactos'}
+            description={
+              query
+                ? 'Probá con otro nombre, el número completo o el wa_id.'
+                : 'Cada persona que le escriba a tu número aparece acá automáticamente.'
+            }
+            action={
+              query ? (
+                <Button variant="outline" size="sm" onClick={() => setQuery('')}>
+                  Limpiar búsqueda
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
+
+        {!isLoading && visible.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-border bg-surface">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-4">Contacto</TableHead>
+                  <TableHead>Teléfono</TableHead>
+                  <TableHead>wa_id</TableHead>
+                  <TableHead className="w-px pr-4" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {visible.map((c) => {
+                  const conversationId = conversationByContact.get(c.id)
+                  return (
+                    <TableRow key={c.id}>
+                      <TableCell className="pl-4">
+                        <div className="flex items-center gap-2.5">
+                          <ContactAvatar seed={c.id} name={c.name} size="sm" />
+                          <span className="font-medium">{c.name ?? 'Sin nombre'}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="tabular font-mono text-[12.5px] text-muted-foreground">
+                        {formatPhone(c.phone)}
+                      </TableCell>
+                      <TableCell className="font-mono text-[12.5px] text-muted-foreground">
+                        {c.external_id}
+                      </TableCell>
+                      <TableCell className="pr-4 text-right">
+                        {conversationId && (
+                          <Button variant="ghost" size="xs" asChild>
+                            <Link to={`/accounts/${accountId}/conversations/${conversationId}`}>
+                              Ver conversación
+                            </Link>
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

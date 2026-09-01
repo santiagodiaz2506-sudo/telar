@@ -4,10 +4,11 @@ import { AccountLayout } from '@/routes/AccountLayout'
 import { AccountPickerPage } from '@/routes/AccountPickerPage'
 import { BotFlowPage } from '@/routes/BotFlowPage'
 import { ContactsPage } from '@/routes/ContactsPage'
-import { ConversationDetailPage } from '@/routes/ConversationDetailPage'
-import { ConversationsPage } from '@/routes/ConversationsPage'
+import { InboxLayout } from '@/routes/InboxLayout'
 import { LoginPage } from '@/routes/LoginPage'
+import { NoThreadSelected } from '@/routes/NoThreadSelected'
 import { RootRedirect } from '@/routes/RootRedirect'
+import { ThreadPage } from '@/routes/ThreadPage'
 
 function App() {
   return (
@@ -17,11 +18,16 @@ function App() {
       <Route path="/accounts" element={<AccountPickerPage />} />
       <Route path="/accounts/:accountId" element={<AccountLayout />}>
         <Route index element={<Navigate to="conversations" replace />} />
-        <Route path="conversations" element={<ConversationsPage />} />
-        <Route path="conversations/:conversationId" element={<ConversationDetailPage />} />
+        {/* La lista y el hilo viven en la misma pantalla, pero cada
+            conversación conserva su propia URL para poder compartirla. */}
+        <Route path="conversations" element={<InboxLayout />}>
+          <Route index element={<NoThreadSelected />} />
+          <Route path=":conversationId" element={<ThreadPage />} />
+        </Route>
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="bot" element={<BotFlowPage />} />
       </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
