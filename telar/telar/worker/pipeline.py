@@ -54,7 +54,10 @@ class Pipeline:
         if key not in self._graphs:
             checkpointer = await self._get_checkpointer()
             extra_tools = await build_custom_tools(account_id)
-            self._graphs[key] = build_graph(checkpointer=checkpointer, extra_tools=extra_tools)
+            graph_json = await repo.get_active_bot_graph(account_id)
+            self._graphs[key] = build_graph(
+                checkpointer=checkpointer, extra_tools=extra_tools, graph_json=graph_json
+            )
         return self._graphs[key]
 
     async def handle(self, batch: list[InboundMessage]) -> None:

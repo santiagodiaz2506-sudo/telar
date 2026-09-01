@@ -243,6 +243,34 @@ Cualquiera que pertenece a la cuenta puede ver conversaciones y contactos. Tomar
 
 `GET /accounts/<id>/stats` da el conteo de conversaciones por estado. Es el único "informe" del v0 — nada de series de tiempo ni desempeño por agente todavía.
 
+## Compilador de grafos
+
+El grafo del agente no está más escrito a mano: `build_graph()` compila un JSON (guardado en `bot_versions.graph`) a un `StateGraph` de LangGraph real. Si una cuenta no configuró un bot propio, se usa un JSON por defecto de un solo nodo — el mismo comportamiento que tenía el v0 desde el día uno, cero cambio para nadie que no toque esto.
+
+Formato del JSON — una cadena lineal de nodos `agent` (todavía sin ramas condicionales):
+
+```json
+{
+  "nodes": [
+    {"id": "triage", "type": "agent", "system_prompt": "Detectá qué necesita el cliente.", "tools": []},
+    {"id": "respuesta", "type": "agent", "system_prompt": "Respondé con la base de conocimiento.", "tools": ["consultar_base_de_conocimiento", "escalar_a_humano"]}
+  ],
+  "edges": [
+    {"from": "START", "to": "triage"},
+    {"from": "triage", "to": "respuesta"},
+    {"from": "respuesta", "to": "END"}
+  ]
+}
+```
+
+`system_prompt` es opcional por nodo (si falta, usa el de la cuenta); `tools` es opcional (si falta, el nodo tiene todas las disponibles; una lista vacía significa sin tools). Se despliega así:
+
+```bash
+python -m telar.agent.deploy_bot <account_id> <nombre_del_bot> flow.json
+```
+
+El script compila el grafo de verdad (con las tools reales de la cuenta) antes de guardar nada — un JSON inválido no llega a quedar en la base de datos.
+
 ## Anti-abuso
 
 Nada de esto reemplaza un reverse proxy/CDN delante en producción (rate limiting real, límite de tamaño de body, TLS) — son la segunda capa, no la primera:
@@ -292,7 +320,7 @@ Si agregás o editás una tool, hace falta reiniciar el proceso de la API para q
 - [x] Herramientas configurables por HTTP y SQL
 - [x] Bandeja de entrada, contactos e informes
 - [x] Cuentas, equipos y roles (superadmin, administrador, supervisor, asesor)
-- [ ] Compilador de grafos desde JSON
+- [x] Compilador de grafos desde JSON
 - [ ] Constructor visual de flujos
 
 El constructor visual va al final a propósito. El JSON del grafo, que se guarda en `bot_versions.graph`, es el contrato entre el editor y el runtime. Podemos compilar y probar flujos escritos a mano mucho antes de que exista un solo pixel de interfaz.

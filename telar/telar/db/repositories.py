@@ -583,3 +583,80 @@ async def get_conversation_stats(account_id: UUID) -> dict[str, int]:
     for status_value, count in rows:
         counts[status_value] = count
     return counts
+
+
+async def get_bot_by_name(account_id: UUID, name: str) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, name, active_version_id FROM bots WHERE account_id = %s AND name = %s",
+            (account_id, name),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def insert_bot(account_id: UUID, name: str) -> UUID:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "INSERT INTO bots (account_id, name) VALUES (%s, %s) RETURNING id",
+            (account_id, name),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def get_next_bot_version(bot_id: UUID) -> int:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT COALESCE(MAX(version), 0) + 1 FROM bot_versions WHERE bot_id = %s",
+            (bot_id,),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def insert_bot_version(
+    bot_id: UUID, version: int, graph: dict, notes: str | None = None
+) -> UUID:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO bot_versions (bot_id, version, graph, notes)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (bot_id, version, json.dumps(graph), notes),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def set_active_bot_version(bot_id: UUID, version_id: UUID) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE bots SET active_version_id = %s WHERE id = %s",
+            (version_id, bot_id),
+        )
+
+
+async def get_active_bot_graph(account_id: UUID) -> dict | None:
+    """None si la cuenta no tiene bot, o si lo tiene sin versión activa."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT bv.graph
+              FROM bots b
+              JOIN bot_versions bv ON bv.id = b.active_version_id
+             WHERE b.account_id = %s
+            """,
+            (account_id,),
+        )
+        rows = await cur.fetchall()
+    return rows[0][0] if rows else None
