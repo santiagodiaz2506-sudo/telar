@@ -14,6 +14,7 @@ import logging
 from collections import defaultdict
 
 from telar.config import settings
+from telar.core.ratelimit import SlidingWindowLimiter
 from telar.core.types import InboundMessage
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,10 @@ class Dispatcher:
         self._buffers: dict[str, list[InboundMessage]] = defaultdict(list)
         self._timers: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._limiter = SlidingWindowLimiter(
+            max_events=settings().rate_limit_messages_per_window,
+            window_seconds=settings().rate_limit_window_seconds,
+        )
 
     def submit(self, msg: InboundMessage) -> None:
         """
@@ -34,6 +39,13 @@ class Dispatcher:
         el agente ve la ráfaga completa como un solo turno.
         """
         key = self._key(msg)
+
+        # Anti-abuso: un contacto que manda mensajes en bucle no debe poder
+        # disparar llamadas ilimitadas al LLM ni llenar el buffer de debounce.
+        if not self._limiter.allow(key):
+            log.warning("limite de mensajes excedido para %s, se descarta", key)
+            return
+
         self._buffers[key].append(msg)
 
         timer = self._timers.get(key)

@@ -15,15 +15,16 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
-from telar.agent.tools import escalar_a_humano
+from telar.agent.tools import consultar_base_de_conocimiento, escalar_a_humano
 from telar.llm.registry import get_model
 
-TOOLS = [escalar_a_humano]
+TOOLS = [escalar_a_humano, consultar_base_de_conocimiento]
 
 
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     system_prompt: str
+    account_id: str
 
 
 def build_graph(model_spec: str | None = None, checkpointer=None):

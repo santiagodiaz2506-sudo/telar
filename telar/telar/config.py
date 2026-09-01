@@ -31,6 +31,21 @@ class Settings(BaseSettings):
     default_model: str = "anthropic:claude-sonnet-4-5"
     default_system_prompt: str = "Eres un asistente de atención al cliente. Responde breve y claro."
 
+    # Anti-abuso: volumen de mensajes de WhatsApp por contacto y tope global
+    # de invocaciones concurrentes al LLM.
+    rate_limit_messages_per_window: int = 10
+    rate_limit_window_seconds: float = 60
+    rate_limit_max_concurrent_agent_calls: int = 20
+
+    # Tamaño máximo aceptado del body del webhook, antes de leerlo.
+    webhook_max_body_bytes: int = 65536
+
+    # Autenticación de usuarios (no de WhatsApp).
+    jwt_secret: str = ""
+    jwt_expire_minutes: int = 60 * 24
+    login_rate_limit_attempts: int = 5
+    login_rate_limit_window_seconds: float = 900
+
     log_level: str = "INFO"
 
 

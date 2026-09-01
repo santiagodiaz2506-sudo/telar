@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, FastAPI, Request, Response
 
+from telar.auth.router import router as auth_router
 from telar.channels.meta import default_adapter
 from telar.config import settings
 from telar.db import repositories as repo
@@ -38,12 +39,21 @@ async def verify(request: Request) -> Response:
     return Response(content=challenge, media_type="text/plain")
 
 
-@router.post("/webhooks/whatsapp")
-async def inbound(request: Request) -> dict[str, str]:
+@router.post("/webhooks/whatsapp", response_model=None)
+async def inbound(request: Request) -> dict[str, str] | Response:
     """
     Devuelve 200 siempre y de inmediato. Si tardas, Meta reintenta y acabas
     procesando el mismo mensaje varias veces.
     """
+    # Se chequea antes de leer el body: sin esto, cualquiera en internet
+    # (no hace falta la firma de Meta para llegar hasta acá) puede mandar
+    # bodies enormes en bucle y gastar memoria antes de que el sistema
+    # siquiera intente autenticar la request. El límite real de producción
+    # va en el reverse proxy; esto es defensa en profundidad.
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > settings().webhook_max_body_bytes:
+        return Response(status_code=413)
+
     raw = await request.body()
 
     if not adapter.verify_signature(raw, request.headers.get("X-Hub-Signature-256")):
@@ -92,3 +102,4 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Telar", version="0.1.0", lifespan=lifespan)
 app.include_router(router)
+app.include_router(auth_router)

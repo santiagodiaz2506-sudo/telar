@@ -1,0 +1,85 @@
+"""Endpoints de autenticación de usuarios (agentes, administradores)."""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel
+
+from telar.auth.dependencies import get_current_user
+from telar.auth.security import create_access_token, verify_dummy_password, verify_password
+from telar.config import settings
+from telar.core.ratelimit import SlidingWindowLimiter
+from telar.db import repositories as repo
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+_login_limiter = SlidingWindowLimiter(
+    max_events=settings().login_rate_limit_attempts,
+    window_seconds=settings().login_rate_limit_window_seconds,
+)
+
+_INVALID_CREDENTIALS = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas"
+)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class AccountMembership(BaseModel):
+    account_id: UUID
+    role: str
+
+
+class MeResponse(BaseModel):
+    id: UUID
+    email: str
+    name: str
+    is_superadmin: bool
+    accounts: list[AccountMembership]
+
+
+@router.post("/login", response_model=TokenResponse)
+async def login(body: LoginRequest, request: Request) -> TokenResponse:
+    # Rate limit por IP: protege contra fuerza bruta sobre el password.
+    client_ip = request.client.host if request.client else "desconocido"
+    if not _login_limiter.allow(client_ip):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Demasiados intentos, esperá unos minutos.",
+        )
+
+    user = await repo.get_user_by_email(body.email)
+
+    # Se corre el hash incluso si el email no existe: el tiempo de
+    # respuesta no debe delatar si está registrado (evita enumeración).
+    if user is None:
+        verify_dummy_password(body.password)
+        raise _INVALID_CREDENTIALS
+
+    if not verify_password(body.password, user["password_hash"]):
+        raise _INVALID_CREDENTIALS
+
+    token = create_access_token(user["id"])
+    return TokenResponse(access_token=token)
+
+
+@router.get("/me", response_model=MeResponse)
+async def me(user: dict = Depends(get_current_user)) -> MeResponse:
+    accounts = await repo.get_user_accounts(user["id"])
+    return MeResponse(
+        id=user["id"],
+        email=user["email"],
+        name=user["name"],
+        is_superadmin=user["is_superadmin"],
+        accounts=[AccountMembership(**a) for a in accounts],
+    )

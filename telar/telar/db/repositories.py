@@ -158,6 +158,60 @@ async def save_inbound(msg: InboundMessage, conversation_id: UUID) -> UUID | Non
     return row[0] if row else None
 
 
+def _to_vector_literal(embedding: list[float]) -> str:
+    """
+    psycopg no trae adaptador para el tipo vector de pgvector: se serializa
+    a texto y se castea en la query con ::vector. repr() de un float en
+    Python siempre usa punto decimal, sin importar el locale del sistema.
+    """
+    return "[" + ",".join(repr(x) for x in embedding) + "]"
+
+
+async def insert_kb_chunks(
+    knowledge_base_id: UUID, rows: list[tuple[str | None, str, list[float]]]
+) -> None:
+    """rows: (source, content, embedding)."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.executemany(
+                """
+                INSERT INTO kb_chunks (knowledge_base_id, source, content, embedding)
+                VALUES (%s, %s, %s, %s::vector)
+                """,
+                [
+                    (knowledge_base_id, source, content, _to_vector_literal(embedding))
+                    for source, content, embedding in rows
+                ],
+            )
+
+
+async def search_kb_chunks(
+    account_id: UUID, embedding: list[float], limit: int = 5
+) -> list[dict]:
+    """
+    Similitud coseno contra kb_chunks de todas las bases de conocimiento de
+    la cuenta, usando el índice hnsw (kb_chunks_vec) de la migración.
+    """
+    vec = _to_vector_literal(embedding)
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT kc.content, kc.source,
+                   1 - (kc.embedding <=> %(vec)s::vector) AS similarity
+              FROM kb_chunks kc
+              JOIN knowledge_bases kb ON kb.id = kc.knowledge_base_id
+             WHERE kb.account_id = %(account_id)s
+             ORDER BY kc.embedding <=> %(vec)s::vector
+             LIMIT %(limit)s
+            """,
+            {"vec": vec, "account_id": account_id, "limit": limit},
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
 async def save_outbound(
     msg: OutboundMessage, account_id: UUID, inbox_id: UUID, channel_message_id: str | None
 ) -> UUID:
@@ -182,6 +236,60 @@ async def save_outbound(
                 msg.text,
                 "sent" if channel_message_id else "failed",
             ),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def get_user_by_email(email: str) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, email, name, password_hash, is_superadmin "
+            "FROM users WHERE email = %s",
+            (email,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def get_user_by_id(user_id: UUID) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, email, name, password_hash, is_superadmin "
+            "FROM users WHERE id = %s",
+            (user_id,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def get_user_accounts(user_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT account_id, role FROM account_users WHERE user_id = %s",
+            (user_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def insert_user(
+    email: str, name: str, password_hash: str, is_superadmin: bool = False
+) -> UUID:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO users (email, name, password_hash, is_superadmin)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (email, name, password_hash, is_superadmin),
         )
         row = await cur.fetchone()
     return row[0]

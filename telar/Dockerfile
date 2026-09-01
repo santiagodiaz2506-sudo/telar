@@ -7,5 +7,8 @@ COPY pyproject.toml README.md ./
 COPY telar ./telar
 RUN pip install --no-cache-dir .
 
+RUN useradd --create-home --uid 1000 telar
+USER telar
+
 EXPOSE 8000
 CMD ["uvicorn", "telar.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

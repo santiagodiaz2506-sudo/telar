@@ -8,12 +8,14 @@ producto usable y un bot que le habla encima al asesor.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from telar.agent.graph import build_graph
+from telar.agent.tools import escalar_a_humano
 from telar.channels.meta import MetaWhatsAppAdapter
 from telar.config import settings
 from telar.core import state as st
@@ -28,6 +30,11 @@ class Pipeline:
     def __init__(self, adapter: MetaWhatsAppAdapter) -> None:
         self.adapter = adapter
         self._graph = None
+        # Tope global de invocaciones concurrentes al LLM: protege el pool
+        # de Postgres y el rate limit del proveedor de un pico de tráfico.
+        self._semaphore = asyncio.Semaphore(
+            settings().rate_limit_max_concurrent_agent_calls
+        )
 
     async def _get_graph(self):
         if self._graph is None:
@@ -45,10 +52,17 @@ class Pipeline:
             first.account_id, first.inbox_id, contact_id, bot_id=None
         )
 
+        # save_inbound devuelve None si el mensaje ya estaba guardado (Meta
+        # reintenta el webhook). Solo los mensajes nuevos entran al turno del
+        # agente: si dos reintentos caen en ventanas de debounce distintas,
+        # esto evita que el bot invoque al LLM y responda dos veces.
+        new_messages = []
         for msg in batch:
-            await repo.save_inbound(msg, conv.id)
+            inserted_id = await repo.save_inbound(msg, conv.id)
             if msg.channel_message_id:
                 await self.adapter.mark_read(msg.channel_message_id)
+            if inserted_id is not None:
+                new_messages.append(msg)
 
         st.on_inbound(conv)
         await repo.save_conversation(conv)
@@ -59,16 +73,22 @@ class Pipeline:
                      conv.id, conv.status.value)
             return
 
-        text = "\n".join(m.as_agent_text() for m in batch)
+        if not new_messages:
+            log.info("conversación %s: lote ya procesado (reintento de Meta)", conv.id)
+            return
+
+        text = "\n".join(m.as_agent_text() for m in new_messages)
         graph = await self._get_graph()
 
-        result = await graph.ainvoke(
-            {
-                "messages": [HumanMessage(content=text)],
-                "system_prompt": settings().default_system_prompt,
-            },
-            config={"configurable": {"thread_id": str(conv.id)}},
-        )
+        async with self._semaphore:
+            result = await graph.ainvoke(
+                {
+                    "messages": [HumanMessage(content=text)],
+                    "system_prompt": settings().default_system_prompt,
+                    "account_id": str(conv.account_id),
+                },
+                config={"configurable": {"thread_id": str(conv.id)}},
+            )
 
         reply = result["messages"][-1]
         answer = reply.content if isinstance(reply.content, str) else str(reply.content)
@@ -76,8 +96,13 @@ class Pipeline:
         if answer.strip():
             await self._send(conv, first, answer)
 
-        # Si el agente pidió transferir, soltamos la conversación.
-        if any("TRANSFERIR:" in str(m.content) for m in result["messages"][-3:]):
+        # Si el agente llamó a la tool de handoff, soltamos la conversación.
+        # Se inspecciona el ToolMessage de la ejecución, no el texto de la
+        # respuesta: así no depende de lo que la tool devuelva como string.
+        if any(
+            isinstance(m, ToolMessage) and m.name == escalar_a_humano.name
+            for m in result["messages"][-3:]
+        ):
             st.request_handoff(conv, team_id=conv.team_id)
             await repo.save_conversation(conv)
             log.info("conversación %s transferida a humano", conv.id)

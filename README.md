@@ -144,11 +144,67 @@ Cuatro estados y las transiciones válidas entre ellos:
 
 El agente pide el traspaso llamando la herramienta `escalar_a_humano`. Todo lo demás lo maneja la máquina de estados, fuera del grafo, donde se puede razonar sin pensar en el LLM.
 
+## Bases de conocimiento
+
+El agente tiene una herramienta, `consultar_base_de_conocimiento`, que busca por similitud semántica en pgvector. No es un paso fijo de RAG delante del grafo: el modelo decide cuándo llamarla, igual que decide cuándo llamar `escalar_a_humano`.
+
+Como todavía no hay API de administración, crear la base de conocimiento es un `INSERT` a mano, igual que la cuenta y el inbox:
+
+```sql
+INSERT INTO knowledge_bases (account_id, name) VALUES ('<tu account_id>', 'FAQ') RETURNING id;
+```
+
+Ingestar contenido sí necesita código (fragmentar el texto y calcular embeddings), así que hay un script:
+
+```bash
+pip install "telar[openai]"
+export OPENAI_API_KEY=...
+
+python -m telar.kb.ingest <knowledge_base_id> ruta/al/archivo.txt
+```
+
+El embedding es `text-embedding-3-small` de OpenAI, fijo en el v0: la columna `kb_chunks.embedding` está declarada como `vector(1536)` en la migración, así que cambiar de modelo implica también alterar esa columna.
+
+## Autenticación
+
+Esto es login de personas (agentes, administradores) para la futura API de administración — no tiene nada que ver con el contacto de WhatsApp, que nunca inicia sesión, se identifica por su `wa_id`.
+
+Como todavía no hay API de administración ni registro, el primer usuario se crea a mano:
+
+```bash
+python -m telar.auth.create_user admin@tuempresa.com "Nombre Apellido" --superadmin
+```
+
+Pide la contraseña por consola (no queda en el historial de la shell). Para vincularlo a una cuenta con un rol:
+
+```sql
+INSERT INTO account_users (account_id, user_id, role) VALUES ('<account_id>', '<user_id>', 'administrator');
+```
+
+Con eso ya podés loguearte:
+
+```bash
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@tuempresa.com", "password": "..."}'
+```
+
+Devuelve un `access_token` (JWT, expira en 24h por defecto — `JWT_EXPIRE_MINUTES`). Se manda como `Authorization: Bearer <token>` en cada request a un endpoint protegido, por ejemplo `GET /auth/me`.
+
+## Anti-abuso
+
+Nada de esto reemplaza un reverse proxy/CDN delante en producción (rate limiting real, límite de tamaño de body, TLS) — son la segunda capa, no la primera:
+
+- **Mensajes de WhatsApp**: `RATE_LIMIT_MESSAGES_PER_WINDOW` mensajes por contacto cada `RATE_LIMIT_WINDOW_SECONDS` segundos (default 10 por minuto). El exceso se descarta antes de entrar al buffer de debounce, sin invocar al LLM.
+- **Invocaciones al LLM**: `RATE_LIMIT_MAX_CONCURRENT_AGENT_CALLS` llamadas concurrentes como tope global (default 20), para no saturar el pool de Postgres ni el rate limit del proveedor.
+- **Login**: `LOGIN_RATE_LIMIT_ATTEMPTS` intentos por IP cada `LOGIN_RATE_LIMIT_WINDOW_SECONDS` (default 5 cada 15 minutos).
+- **Body del webhook**: se rechaza con `413` antes de leerlo si supera `WEBHOOK_MAX_BODY_BYTES` (default 64 KB).
+
 ## Hoja de ruta
 
 - [x] Gateway de WhatsApp con agente configurable
 - [x] Máquina de estados del traspaso
-- [ ] Bases de conocimiento con pgvector, expuestas como herramienta del agente
+- [x] Bases de conocimiento con pgvector, expuestas como herramienta del agente
 - [ ] Bandeja de entrada, contactos e informes
 - [ ] Cuentas, equipos y roles (superadmin, administrador, supervisor, asesor)
 - [ ] Herramientas configurables por HTTP y SQL
