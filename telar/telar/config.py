@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     login_rate_limit_attempts: int = 5
     login_rate_limit_window_seconds: float = 900
 
+    # Origen permitido para el frontend (CORS). Un solo origin explícito,
+    # no "*" -- ver README, sección de anti-abuso.
+    frontend_origin: str = "http://localhost:5173"
+
     log_level: str = "INFO"
 
 
