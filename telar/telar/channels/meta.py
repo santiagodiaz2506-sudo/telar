@@ -182,12 +182,20 @@ class MetaWhatsAppAdapter(ChannelAdapter):
         body = self._build_body(message, to)
         url = f"{self.base}/{self.phone_number_id}/messages"
 
-        async with httpx.AsyncClient(timeout=20) as client:
-            resp = await client.post(
-                url,
-                json=body,
-                headers={"Authorization": f"Bearer {self.access_token}"},
-            )
+        # SendResult modela el "no se pudo enviar" (ok=False, error_code,
+        # retryable) justamente para no dejar que un fallo de transporte
+        # (red, TLS, token vacío -> header inválido) escape como excepción
+        # sin atrapar hacia quien llama.
+        try:
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = await client.post(
+                    url,
+                    json=body,
+                    headers={"Authorization": f"Bearer {self.access_token}"},
+                )
+        except httpx.HTTPError as e:
+            log.warning("envío falló: error de transporte %s", e)
+            return SendResult(ok=False, error_code="transport_error", error_message=str(e), retryable=True)
 
         if resp.status_code >= 400:
             err = resp.json().get("error", {})

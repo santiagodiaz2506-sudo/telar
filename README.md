@@ -216,6 +216,33 @@ Qué puede hacer cada rol dentro de una cuenta:
 
 `is_superadmin` (flag en `users`, no un rol de cuenta) tiene bypass sobre todo lo anterior en cualquier cuenta, incluso sin pertenecer a ella.
 
+## Bandeja de entrada
+
+Cómo un humano ve y responde conversaciones, sin tocar la base de datos:
+
+```bash
+# listar, opcionalmente filtrando por estado
+curl http://localhost:8000/accounts/<account_id>/conversations?status_filter=pending \
+  -H "Authorization: Bearer <token>"
+
+# tomarla para uno mismo
+curl -X POST http://localhost:8000/accounts/<account_id>/conversations/<id>/assign \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" -d '{}'
+
+# responder
+curl -X POST http://localhost:8000/accounts/<account_id>/conversations/<id>/messages \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"text": "Hola, ¿en qué te ayudo?"}'
+
+# resolver
+curl -X POST http://localhost:8000/accounts/<account_id>/conversations/<id>/resolve \
+  -H "Authorization: Bearer <token>"
+```
+
+Cualquiera que pertenece a la cuenta puede ver conversaciones y contactos. Tomar una conversación para uno mismo también es libre; asignársela a **otra** persona requiere `administrator`/`supervisor`. Responder requiere ser quien la tiene asignada (o `administrator`/`supervisor`) y que la conversación esté `open` — se rechaza con `409` si todavía no la tomaste, y con `403` si es de otro agente.
+
+`GET /accounts/<id>/stats` da el conteo de conversaciones por estado. Es el único "informe" del v0 — nada de series de tiempo ni desempeño por agente todavía.
+
 ## Anti-abuso
 
 Nada de esto reemplaza un reverse proxy/CDN delante en producción (rate limiting real, límite de tamaño de body, TLS) — son la segunda capa, no la primera:
@@ -263,7 +290,7 @@ Si agregás o editás una tool, hace falta reiniciar el proceso de la API para q
 - [x] Máquina de estados del traspaso
 - [x] Bases de conocimiento con pgvector, expuestas como herramienta del agente
 - [x] Herramientas configurables por HTTP y SQL
-- [ ] Bandeja de entrada, contactos e informes
+- [x] Bandeja de entrada, contactos e informes
 - [x] Cuentas, equipos y roles (superadmin, administrador, supervisor, asesor)
 - [ ] Compilador de grafos desde JSON
 - [ ] Constructor visual de flujos

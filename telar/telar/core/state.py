@@ -10,7 +10,7 @@ genera nada. Sin esta guarda la IA responde encima del asesor.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from telar.core.types import ConversationStatus
@@ -81,7 +81,7 @@ def transition(
         conv.assignee_id = None
         conv.resolved_at = None
     elif to is ConversationStatus.RESOLVED:
-        conv.resolved_at = datetime.utcnow()
+        conv.resolved_at = datetime.now(timezone.utc)
 
     return conv
 
@@ -97,7 +97,7 @@ def on_inbound(conv: Conversation, now: datetime | None = None) -> Conversation:
     el bot contesta. Una conversación cerrada que recibe mensaje se reabre
     en manos del bot, que es exactamente el comportamiento pedido.
     """
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     conv.last_contact_message_at = now
 
     if conv.status is ConversationStatus.RESOLVED:
@@ -126,5 +126,5 @@ def window_is_open(conv: Conversation, now: datetime | None = None) -> bool:
     """
     if conv.last_contact_message_at is None:
         return False
-    now = now or datetime.utcnow()
+    now = now or datetime.now(timezone.utc)
     return (now - conv.last_contact_message_at) < SERVICE_WINDOW

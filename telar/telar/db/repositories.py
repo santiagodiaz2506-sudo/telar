@@ -465,3 +465,121 @@ async def delete_team_member(team_id: UUID, user_id: UUID) -> None:
             "DELETE FROM team_members WHERE team_id = %s AND user_id = %s",
             (team_id, user_id),
         )
+
+
+async def get_conversation(conversation_id: UUID) -> Conversation | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, account_id, inbox_id, contact_id, status, assignee_id,
+                   team_id, bot_id, last_contact_message_at, resolved_at
+              FROM conversations
+             WHERE id = %s
+            """,
+            (conversation_id,),
+        )
+        row = await cur.fetchone()
+
+    if row is None:
+        return None
+
+    return Conversation(
+        id=row[0],
+        account_id=row[1],
+        inbox_id=row[2],
+        contact_id=row[3],
+        status=ConversationStatus(row[4]),
+        assignee_id=row[5],
+        team_id=row[6],
+        bot_id=row[7],
+        last_contact_message_at=row[8],
+        resolved_at=row[9],
+    )
+
+
+async def get_conversations_for_account(
+    account_id: UUID, status: str | None = None, limit: int = 50, offset: int = 0
+) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT c.id, c.status, c.assignee_id, c.last_contact_message_at,
+                   ct.id AS contact_id, ct.name AS contact_name, ct.phone AS contact_phone
+              FROM conversations c
+              JOIN contacts ct ON ct.id = c.contact_id
+             WHERE c.account_id = %(account_id)s
+               AND (%(status)s::text IS NULL OR c.status = %(status)s::conversation_status)
+             ORDER BY c.last_contact_message_at DESC NULLS LAST
+             LIMIT %(limit)s OFFSET %(offset)s
+            """,
+            {"account_id": account_id, "status": status, "limit": limit, "offset": offset},
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def get_messages_for_conversation(conversation_id: UUID, limit: int = 50) -> list[dict]:
+    """Últimos N mensajes, devueltos en orden cronológico ascendente."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, sender_type, sender_id, type, content, delivery_status, created_at
+              FROM messages
+             WHERE conversation_id = %s
+             ORDER BY created_at DESC
+             LIMIT %s
+            """,
+            (conversation_id, limit),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return list(reversed(rows))
+
+
+async def get_contacts_for_account(
+    account_id: UUID, limit: int = 50, offset: int = 0
+) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, external_id, name, phone, email, created_at
+              FROM contacts
+             WHERE account_id = %s
+             ORDER BY created_at DESC
+             LIMIT %s OFFSET %s
+            """,
+            (account_id, limit, offset),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def get_contact(contact_id: UUID) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, external_id, name, phone FROM contacts WHERE id = %s",
+            (contact_id,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def get_conversation_stats(account_id: UUID) -> dict[str, int]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT status, count(*) FROM conversations WHERE account_id = %s GROUP BY status",
+            (account_id,),
+        )
+        rows = await cur.fetchall()
+
+    counts = {status.value: 0 for status in ConversationStatus}
+    for status_value, count in rows:
+        counts[status_value] = count
+    return counts
