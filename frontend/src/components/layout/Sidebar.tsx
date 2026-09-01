@@ -6,7 +6,9 @@ import {
   MessagesSquare,
   PanelLeftClose,
   PanelLeftOpen,
+  Plus,
   Users,
+  UsersRound,
   Workflow,
   type LucideIcon,
 } from 'lucide-react'
@@ -14,6 +16,7 @@ import * as React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 
 import { LogoMark } from '@/components/Logo'
+import { NewAccountDialog } from '@/components/NewAccountDialog'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { ContactAvatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -28,16 +31,10 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/lib/auth'
 import { getAccounts, getStats } from '@/lib/endpoints'
+import { ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 
 const COLLAPSE_KEY = 'telar-sidebar-collapsed'
-
-const ROLE_LABEL: Record<string, string> = {
-  superadmin: 'Superadmin',
-  administrator: 'Administrador',
-  supervisor: 'Supervisor',
-  agent: 'Asesor',
-}
 
 interface NavItem {
   to: string
@@ -52,6 +49,7 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
   const [collapsed, setCollapsed] = React.useState(
     () => localStorage.getItem(COLLAPSE_KEY) === '1',
   )
+  const [creatingAccount, setCreatingAccount] = React.useState(false)
 
   const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
   const { data: stats } = useQuery({
@@ -78,6 +76,7 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
       badge: stats?.pending,
     },
     { to: `/accounts/${accountId}/contacts`, label: 'Contactos', icon: Users },
+    { to: `/accounts/${accountId}/team`, label: 'Equipo', icon: UsersRound },
     ...(canEditBot
       ? [{ to: `/accounts/${accountId}/bot`, label: 'Flujo del bot', icon: Workflow }]
       : []),
@@ -163,6 +162,15 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
                 {account.id === accountId && <Check className="size-4 text-primary" />}
               </DropdownMenuItem>
             ))}
+            {user?.is_superadmin && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setCreatingAccount(true)}>
+                  <Plus />
+                  Crear cuenta
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       )}
@@ -220,6 +228,8 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <NewAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
     </aside>
   )
 }

@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import { Search, Users, X } from 'lucide-react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { ChevronDown, Loader2, Search, Users, X } from 'lucide-react'
 import * as React from 'react'
 import { Link, useParams } from 'react-router-dom'
 
@@ -15,18 +15,23 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { getContacts, getConversations } from '@/lib/endpoints'
+import { getContacts, getConversations, PAGE_SIZE } from '@/lib/endpoints'
 import { formatPhone } from '@/lib/format'
 
 export function ContactsPage() {
   const { accountId } = useParams<{ accountId: string }>()
   const [query, setQuery] = React.useState('')
 
-  const { data: contacts, isLoading } = useQuery({
+  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
     queryKey: ['contacts', accountId],
-    queryFn: () => getContacts(accountId!),
+    queryFn: ({ pageParam }) => getContacts(accountId!, { offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
     enabled: !!accountId,
   })
+
+  const contacts = React.useMemo(() => data?.pages.flat(), [data])
 
   /* Para poder saltar del contacto a su conversación sin buscarla a mano. */
   const { data: conversations } = useQuery({
@@ -62,6 +67,7 @@ export function ContactsPage() {
         {contacts && (
           <span className="tabular rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
             {contacts.length}
+            {hasNextPage && '+'}
           </span>
         )}
         <div className="relative ml-auto w-64">
@@ -70,7 +76,7 @@ export function ContactsPage() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar contacto"
+            placeholder="Buscar entre los cargados"
             aria-label="Buscar contactos"
             className="h-8 w-full rounded-md border border-border bg-background pr-8 pl-8 text-[13px] outline-none placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
           />
@@ -101,7 +107,7 @@ export function ContactsPage() {
             title={query ? 'Ningún contacto coincide' : 'Todavía no hay contactos'}
             description={
               query
-                ? 'Probá con otro nombre, el número completo o el wa_id.'
+                ? 'La búsqueda es sobre los contactos ya cargados. Cargá más y volvé a intentar.'
                 : 'Cada persona que le escriba a tu número aparece acá automáticamente.'
             }
             action={
@@ -156,6 +162,20 @@ export function ContactsPage() {
                 })}
               </TableBody>
             </Table>
+          </div>
+        )}
+
+        {hasNextPage && !isLoading && (
+          <div className="mt-3 flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isFetchingNextPage}
+              onClick={() => fetchNextPage()}
+            >
+              {isFetchingNextPage ? <Loader2 className="animate-spin" /> : <ChevronDown />}
+              {isFetchingNextPage ? 'Cargando…' : 'Cargar más contactos'}
+            </Button>
           </div>
         )}
       </div>

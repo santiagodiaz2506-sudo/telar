@@ -10,10 +10,15 @@ import type {
   ConversationStatusValue,
   ContactResponse,
   MeResponse,
+  MemberResponse,
   MessageResponse,
   StatsResponse,
+  TeamResponse,
   TokenResponse,
 } from '@/types/api'
+
+/** El backend pagina con limit/offset y su default es 50. */
+export const PAGE_SIZE = 50
 
 export function login(email: string, password: string) {
   return apiFetch<TokenResponse>('/auth/login', {
@@ -26,13 +31,72 @@ export function getMe() {
   return apiFetch<MeResponse>('/auth/me')
 }
 
+// --------------------------------------------------------------------------
+// Cuentas, miembros y equipos
+// --------------------------------------------------------------------------
+
 export function getAccounts() {
   return apiFetch<AccountResponse[]>('/accounts')
 }
 
-export function getConversations(accountId: string, status?: ConversationStatusValue) {
-  const qs = status ? `?status_filter=${status}` : ''
-  return apiFetch<ConversationResponse[]>(`/accounts/${accountId}/conversations${qs}`)
+export function createAccount(name: string) {
+  return apiFetch<AccountResponse>('/accounts', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function getMembers(accountId: string) {
+  return apiFetch<MemberResponse[]>(`/accounts/${accountId}/members`)
+}
+
+export function addMember(accountId: string, email: string, role: string) {
+  return apiFetch<MemberResponse>(`/accounts/${accountId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+  })
+}
+
+export function removeMember(accountId: string, userId: string) {
+  return apiFetch<void>(`/accounts/${accountId}/members/${userId}`, { method: 'DELETE' })
+}
+
+export function getTeams(accountId: string) {
+  return apiFetch<TeamResponse[]>(`/accounts/${accountId}/teams`)
+}
+
+export function createTeam(accountId: string, name: string) {
+  return apiFetch<TeamResponse>(`/accounts/${accountId}/teams`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function addTeamMember(accountId: string, teamId: string, userId: string) {
+  return apiFetch<void>(`/accounts/${accountId}/teams/${teamId}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ user_id: userId }),
+  })
+}
+
+export function removeTeamMember(accountId: string, teamId: string, userId: string) {
+  return apiFetch<void>(`/accounts/${accountId}/teams/${teamId}/members/${userId}`, {
+    method: 'DELETE',
+  })
+}
+
+// --------------------------------------------------------------------------
+// Conversaciones
+// --------------------------------------------------------------------------
+
+export function getConversations(
+  accountId: string,
+  status?: ConversationStatusValue,
+  { limit = PAGE_SIZE, offset = 0 }: { limit?: number; offset?: number } = {},
+) {
+  const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (status) qs.set('status_filter', status)
+  return apiFetch<ConversationResponse[]>(`/accounts/${accountId}/conversations?${qs}`)
 }
 
 export function getConversationDetail(accountId: string, conversationId: string) {
@@ -73,13 +137,21 @@ export function sendMessage(accountId: string, conversationId: string, text: str
   )
 }
 
-export function getContacts(accountId: string) {
-  return apiFetch<ContactResponse[]>(`/accounts/${accountId}/contacts`)
+export function getContacts(
+  accountId: string,
+  { limit = PAGE_SIZE, offset = 0 }: { limit?: number; offset?: number } = {},
+) {
+  const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  return apiFetch<ContactResponse[]>(`/accounts/${accountId}/contacts?${qs}`)
 }
 
 export function getStats(accountId: string) {
   return apiFetch<StatsResponse>(`/accounts/${accountId}/stats`)
 }
+
+// --------------------------------------------------------------------------
+// Bot
+// --------------------------------------------------------------------------
 
 export function getBot(accountId: string) {
   return apiFetch<BotResponse | null>(`/accounts/${accountId}/bot`)

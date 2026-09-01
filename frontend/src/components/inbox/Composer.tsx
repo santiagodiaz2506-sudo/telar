@@ -1,7 +1,8 @@
-import { CornerDownLeft, SendHorizonal } from 'lucide-react'
+import { Clock, CornerDownLeft, SendHorizonal } from 'lucide-react'
 import * as React from 'react'
 
 import { Button } from '@/components/ui/button'
+import type { ServiceWindow } from '@/lib/serviceWindow'
 import { cn } from '@/lib/utils'
 
 const MAX_LENGTH = 4096
@@ -10,10 +11,12 @@ export function Composer({
   onSend,
   disabled,
   contactName,
+  window: sw,
 }: {
   onSend: (text: string) => Promise<void>
   disabled?: boolean
   contactName: string
+  window: ServiceWindow
 }) {
   const [text, setText] = React.useState('')
   const [sending, setSending] = React.useState(false)
@@ -28,7 +31,8 @@ export function Composer({
   }, [text])
 
   const tooLong = text.length > MAX_LENGTH
-  const canSend = !!text.trim() && !sending && !disabled && !tooLong
+  const blocked = disabled || !sw.open
+  const canSend = !!text.trim() && !sending && !blocked && !tooLong
 
   async function submit() {
     if (!canSend) return
@@ -44,9 +48,32 @@ export function Composer({
 
   return (
     <div className="border-t border-border bg-surface px-4 py-3">
+      {/* La ventana de 24h se avisa antes de escribir, no después de que
+          Meta rechace el envío. */}
+      {!sw.open && (
+        <div className="mb-2.5 flex items-start gap-2 rounded-lg bg-status-pending-soft px-3 py-2.5 text-[13px] text-status-pending">
+          <Clock className="mt-0.5 size-4 shrink-0" />
+          <p>
+            {sw.never
+              ? 'Este contacto todavía no escribió, así que no hay ventana de servicio abierta.'
+              : 'Pasaron más de 24 horas desde el último mensaje del contacto.'}{' '}
+            Meta solo acepta plantillas aprobadas fuera de la ventana, y Telar todavía no las
+            soporta.
+          </p>
+        </div>
+      )}
+
+      {sw.open && sw.warning && (
+        <p className="mb-2 flex items-center gap-1.5 px-1 text-[12px] text-status-pending">
+          <Clock className="size-3.5" />
+          La ventana de 24 h se cierra en {sw.label}
+        </p>
+      )}
+
       <div
         className={cn(
           'flex items-end gap-2 rounded-xl border bg-input p-2 transition-[border-color,box-shadow]',
+          blocked && 'opacity-60',
           tooLong
             ? 'border-destructive ring-[3px] ring-destructive/20'
             : 'border-border-strong focus-within:border-primary focus-within:ring-[3px] focus-within:ring-primary/20',
@@ -56,7 +83,7 @@ export function Composer({
           ref={ref}
           rows={1}
           value={text}
-          disabled={disabled || sending}
+          disabled={blocked || sending}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -64,9 +91,11 @@ export function Composer({
               submit()
             }
           }}
-          placeholder={`Responderle a ${contactName}…`}
+          placeholder={
+            sw.open ? `Responderle a ${contactName}…` : 'Fuera de la ventana de 24 horas'
+          }
           aria-label="Escribir respuesta"
-          className="max-h-[200px] min-h-9 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 disabled:opacity-50"
+          className="max-h-[200px] min-h-9 flex-1 resize-none bg-transparent px-1.5 py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 disabled:cursor-not-allowed"
         />
         <Button size="icon" onClick={submit} disabled={!canSend} aria-label="Enviar mensaje">
           <SendHorizonal />

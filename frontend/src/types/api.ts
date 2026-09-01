@@ -23,6 +23,8 @@ export interface AccountResponse {
   name: string
 }
 
+export type AccountRoleValue = 'administrator' | 'supervisor' | 'agent'
+
 export interface MemberResponse {
   user_id: string
   email: string

@@ -1,10 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import { Building2, ChevronRight } from 'lucide-react'
+import { Building2, ChevronRight, Plus } from 'lucide-react'
+import * as React from 'react'
 import { Link, Navigate } from 'react-router-dom'
 
 import { EmptyState } from '@/components/EmptyState'
 import { LogoMark } from '@/components/Logo'
+import { NewAccountDialog } from '@/components/NewAccountDialog'
 import { ThemeToggle } from '@/components/ThemeToggle'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth'
 import { getAccounts } from '@/lib/endpoints'
@@ -12,6 +15,7 @@ import { BootScreen } from '@/routes/AccountLayout'
 
 export function AccountPickerPage() {
   const { user, loading } = useAuth()
+  const [creating, setCreating] = React.useState(false)
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts'],
     queryFn: getAccounts,
@@ -54,7 +58,19 @@ export function AccountPickerPage() {
           <EmptyState
             icon={Building2}
             title="Todavía no pertenecés a ninguna cuenta"
-            description="Pedile a un administrador que te sume, o creá una con POST /accounts si sos superadmin."
+            description={
+              user.is_superadmin
+                ? 'Creá la primera cuenta para empezar a operar.'
+                : 'Pedile a un administrador de la cuenta que te sume.'
+            }
+            action={
+              user.is_superadmin ? (
+                <Button size="sm" onClick={() => setCreating(true)}>
+                  <Plus />
+                  Crear cuenta
+                </Button>
+              ) : undefined
+            }
           />
         )}
 
@@ -73,6 +89,15 @@ export function AccountPickerPage() {
             </Link>
           ))}
         </div>
+
+        {user.is_superadmin && !!accounts?.length && (
+          <Button variant="outline" size="sm" className="self-start" onClick={() => setCreating(true)}>
+            <Plus />
+            Crear cuenta
+          </Button>
+        )}
+
+        <NewAccountDialog open={creating} onOpenChange={setCreating} />
       </div>
     </div>
   )

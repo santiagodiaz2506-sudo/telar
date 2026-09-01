@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import { Inbox, RefreshCw, Search, X } from 'lucide-react'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { ChevronDown, Inbox, Loader2, RefreshCw, Search, X } from 'lucide-react'
 import * as React from 'react'
 import { Outlet, useNavigate, useParams } from 'react-router-dom'
 
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/lib/auth'
-import { getConversations, getStats } from '@/lib/endpoints'
+import { getConversations, getStats, PAGE_SIZE } from '@/lib/endpoints'
 import { cn } from '@/lib/utils'
 import type { ConversationStatusValue } from '@/types/api'
 
@@ -35,17 +35,34 @@ export function InboxLayout() {
   const [query, setQuery] = React.useState('')
   const searchRef = React.useRef<HTMLInputElement>(null)
 
+  /**
+   * La API pagina con limit/offset y su default son 50. Sin esto la bandeja
+   * se cortaba en la primera página sin ningún aviso.
+   */
   const {
-    data: conversations,
+    data,
     isLoading,
     isFetching,
     refetch,
-  } = useQuery({
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['conversations', accountId, filter],
-    queryFn: () => getConversations(accountId!, filter === 'all' ? undefined : filter),
+    queryFn: ({ pageParam }) =>
+      getConversations(accountId!, filter === 'all' ? undefined : filter, {
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
     enabled: !!accountId,
-    refetchInterval: 8000,
+    // Un refresco de fondo vuelve a pedir TODAS las páginas cargadas. Mientras
+    // se está en la primera vale la pena; después se corta y queda el botón.
+    refetchInterval: (query) => ((query.state.data?.pages.length ?? 1) > 1 ? false : 8000),
   })
+
+  const conversations = React.useMemo(() => data?.pages.flat(), [data])
 
   const { data: stats } = useQuery({
     queryKey: ['stats', accountId],
@@ -142,7 +159,7 @@ export function InboxLayout() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
-              placeholder="Buscar nombre o teléfono"
+              placeholder="Buscar entre las cargadas"
               aria-label="Buscar conversaciones"
               className="h-8 w-full rounded-md border border-border bg-background pr-8 pl-8 text-[13px] outline-none placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
             />
@@ -230,11 +247,31 @@ export function InboxLayout() {
           ))}
 
           {visible.length > 0 && (
-            <p className="px-4 py-3 text-center text-[11px] text-muted-foreground">
-              {visible.length} {visible.length === 1 ? 'conversación' : 'conversaciones'} ·{' '}
-              <kbd className="rounded border border-border px-1">j</kbd>{' '}
-              <kbd className="rounded border border-border px-1">k</kbd> para moverte
-            </p>
+            <div className="flex flex-col items-center gap-2 px-4 py-3">
+              {hasNextPage && !query && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  disabled={isFetchingNextPage}
+                  onClick={() => fetchNextPage()}
+                >
+                  {isFetchingNextPage ? <Loader2 className="animate-spin" /> : <ChevronDown />}
+                  {isFetchingNextPage ? 'Cargando…' : 'Cargar más'}
+                </Button>
+              )}
+              <p className="text-center text-[11px] text-muted-foreground">
+                {visible.length} {visible.length === 1 ? 'conversación' : 'conversaciones'}
+                {hasNextPage && ' cargadas'} ·{' '}
+                <kbd className="rounded border border-border px-1">j</kbd>{' '}
+                <kbd className="rounded border border-border px-1">k</kbd> para moverte
+              </p>
+              {(data?.pages.length ?? 1) > 1 && (
+                <p className="text-center text-[11px] text-muted-foreground/70">
+                  El refresco automático se pausa mientras haya más de una página cargada.
+                </p>
+              )}
+            </div>
           )}
         </div>
       </section>

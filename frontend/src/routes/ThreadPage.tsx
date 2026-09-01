@@ -1,10 +1,11 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCheck, Hand, Lock, MessageSquareDashed, Undo2, UserPlus } from 'lucide-react'
+import { CheckCheck, Hand, Lock, MessageSquareDashed, Undo2 } from 'lucide-react'
 import * as React from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { EmptyState } from '@/components/EmptyState'
+import { AssigneePicker } from '@/components/inbox/AssigneePicker'
 import { Composer } from '@/components/inbox/Composer'
 import { ContactPanel } from '@/components/inbox/ContactPanel'
 import { DaySeparator, MessageBubble } from '@/components/inbox/MessageBubble'
@@ -16,16 +17,17 @@ import { ApiError } from '@/lib/api'
 import { useAuth } from '@/lib/auth'
 import {
   assignConversation,
-  getContacts,
   getConversationDetail,
+  getMembers,
   releaseConversation,
   resolveConversation,
   sendMessage,
 } from '@/lib/endpoints'
 import { dayKey, dayLabel, formatPhone } from '@/lib/format'
+import { isElevated } from '@/lib/roles'
+import { serviceWindow } from '@/lib/serviceWindow'
+import { useCachedConversation } from '@/lib/useCachedConversation'
 import type { MessageResponse } from '@/types/api'
-
-const ELEVATED_ROLES = ['administrator', 'supervisor', 'superadmin']
 
 /** Dos mensajes seguidos del mismo autor dentro de 3 minutos se agrupan. */
 const GROUP_WINDOW_MS = 3 * 60 * 1000
@@ -47,12 +49,19 @@ export function ThreadPage() {
     refetchInterval: 5000,
   })
 
-  const { data: contacts } = useQuery({
-    queryKey: ['contacts', accountId],
-    queryFn: () => getContacts(accountId!),
+  const role = accountId ? roleForAccount(accountId) : null
+  const canOverride = isElevated(role)
+
+  /* Los nombres del equipo solo hacen falta si podés reasignar o si querés
+     saber quién tiene la conversación. */
+  const { data: members } = useQuery({
+    queryKey: ['members', accountId],
+    queryFn: () => getMembers(accountId!),
     enabled: !!accountId,
     staleTime: 60_000,
   })
+
+  const summary = useCachedConversation(accountId, conversationId)
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
@@ -83,12 +92,25 @@ export function ThreadPage() {
   if (!accountId || !conversationId) return null
   if (isLoading || !conv) return <ThreadSkeleton />
 
-  const contact = contacts?.find((c) => c.id === conv.contact_id)
-  const contactName = contact?.name ?? formatPhone(contact?.phone) ?? 'Sin nombre'
-  const role = roleForAccount(accountId)
+  const contactName = summary?.contact_name ?? formatPhone(summary?.contact_phone) ?? 'Sin nombre'
   const isMine = conv.assignee_id === user?.id
-  const canOverride = role ? ELEVATED_ROLES.includes(role) : false
-  const canWrite = conv.status === 'open' && isMine
+  const canWrite = conv.status === 'open' && (isMine || canOverride)
+
+  const assignee = members?.find((m) => m.user_id === conv.assignee_id)
+  const assigneeName = conv.assignee_id
+    ? isMine
+      ? `${user?.name} (vos)`
+      : (assignee?.name ?? 'Otro asesor')
+    : null
+
+  /**
+   * El backend valida la ventana en el envío; acá la anticipamos con el
+   * último mensaje entrante. `last_contact_message_at` de la lista es la
+   * fuente buena; el hilo es el respaldo cuando la conversación no está en
+   * ninguna página cargada.
+   */
+  const lastInbound = [...conv.messages].reverse().find((m) => m.sender_type === 'contact')
+  const sw = serviceWindow(summary?.last_contact_message_at ?? lastInbound?.created_at ?? null)
 
   async function handleSend(text: string) {
     try {
@@ -100,55 +122,52 @@ export function ThreadPage() {
     }
   }
 
+  function assign(assigneeId?: string) {
+    const target = assigneeId ? members?.find((m) => m.user_id === assigneeId)?.name : null
+    runAction(
+      'No se pudo asignar la conversación',
+      () => assignConversation(accountId!, conversationId!, assigneeId),
+      target ? `Asignada a ${target}` : 'Tomaste la conversación',
+    )
+  }
+
   return (
     <div className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col bg-background">
-        {/* Encabezado del hilo */}
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4">
-          <ContactAvatar seed={conv.contact_id} name={contact?.name} size="md" />
-          <div className="min-w-0">
+          <ContactAvatar seed={conv.contact_id} name={summary?.contact_name} size="md" />
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm leading-tight font-semibold">{contactName}</p>
             <p className="tabular truncate font-mono text-[11px] text-muted-foreground">
-              {formatPhone(contact?.phone)}
+              {formatPhone(summary?.contact_phone)}
             </p>
           </div>
 
-          <StatusBadge status={conv.status} size="sm" className="ml-2 hidden sm:inline-flex" />
+          {/* En xl el panel derecho ya muestra el estado; acá solo estorba y
+              le come el ancho al nombre del contacto. */}
+          <StatusBadge
+            status={conv.status}
+            size="sm"
+            className="hidden shrink-0 sm:inline-flex xl:hidden"
+          />
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             {conv.status !== 'open' && (
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() =>
-                  runAction(
-                    'No se pudo tomar la conversación',
-                    () => assignConversation(accountId, conversationId),
-                    'Tomaste la conversación',
-                  )
-                }
-              >
+              <Button size="sm" disabled={busy} onClick={() => assign()}>
                 <Hand />
                 Tomar
               </Button>
             )}
-            {conv.status === 'open' && !isMine && canOverride && (
-              <Button
-                size="sm"
-                variant="outline"
+
+            {canOverride && (
+              <AssigneePicker
+                accountId={accountId}
+                assigneeId={conv.assignee_id}
                 disabled={busy}
-                onClick={() =>
-                  runAction(
-                    'No se pudo reasignar',
-                    () => assignConversation(accountId, conversationId),
-                    'Te la reasignaste',
-                  )
-                }
-              >
-                <UserPlus />
-                Reasignarme
-              </Button>
+                onAssign={assign}
+              />
             )}
+
             {conv.status === 'open' && isMine && (
               <>
                 <Button
@@ -186,7 +205,6 @@ export function ThreadPage() {
           </div>
         </header>
 
-        {/* Hilo */}
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
           {conv.messages.length === 0 ? (
             <EmptyState
@@ -196,6 +214,14 @@ export function ThreadPage() {
             />
           ) : (
             <div className="mx-auto max-w-3xl">
+              {/* La API devuelve como máximo los últimos 50 mensajes y no
+                  expone un parámetro para pedir más atrás. */}
+              {conv.messages.length >= 50 && (
+                <p className="mb-4 rounded-lg border border-dashed border-border px-3 py-2 text-center text-[11.5px] text-muted-foreground">
+                  Se muestran los últimos 50 mensajes. La API todavía no permite traer los
+                  anteriores.
+                </p>
+              )}
               {groupMessages(conv.messages).map((entry) =>
                 entry.kind === 'day' ? (
                   <DaySeparator key={`day-${entry.key}`} label={entry.label} />
@@ -212,30 +238,26 @@ export function ThreadPage() {
           <div ref={bottomRef} />
         </div>
 
-        {/* Redacción o el motivo por el que no se puede escribir */}
         {canWrite ? (
-          <Composer onSend={handleSend} contactName={contactName} />
+          <Composer onSend={handleSend} contactName={contactName} window={sw} />
         ) : (
           <LockedComposer
             status={conv.status}
             busy={busy}
             canTake={conv.status !== 'open'}
             takenByOther={conv.status === 'open' && !isMine}
-            onTake={() =>
-              runAction(
-                'No se pudo tomar la conversación',
-                () => assignConversation(accountId, conversationId),
-                'Tomaste la conversación',
-              )
-            }
+            assigneeName={assignee?.name}
+            onTake={() => assign()}
           />
         )}
       </div>
 
       <ContactPanel
         conversation={conv}
-        contact={contact}
-        assigneeName={conv.assignee_id ? (isMine ? `${user?.name} (vos)` : 'Otro asesor') : null}
+        contactName={contactName}
+        contactPhone={summary?.contact_phone ?? null}
+        assigneeName={assigneeName}
+        serviceWindow={sw}
       />
     </div>
   )
@@ -246,16 +268,18 @@ function LockedComposer({
   busy,
   canTake,
   takenByOther,
+  assigneeName,
   onTake,
 }: {
   status: string
   busy: boolean
   canTake: boolean
   takenByOther: boolean
+  assigneeName?: string
   onTake: () => void
 }) {
   const message = takenByOther
-    ? 'Esta conversación la tiene otro asesor.'
+    ? `Esta conversación la tiene ${assigneeName ?? 'otro asesor'}.`
     : status === 'bot'
       ? 'El agente de IA está atendiendo. Si la tomás, la IA deja de responder.'
       : status === 'pending'
