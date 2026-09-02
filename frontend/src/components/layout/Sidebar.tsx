@@ -7,6 +7,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
+  Settings,
   Users,
   UsersRound,
   Workflow,
@@ -78,7 +79,10 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
     { to: `/accounts/${accountId}/contacts`, label: 'Contactos', icon: Users },
     { to: `/accounts/${accountId}/team`, label: 'Equipo', icon: UsersRound },
     ...(canEditBot
-      ? [{ to: `/accounts/${accountId}/bot`, label: 'Flujo del bot', icon: Workflow }]
+      ? [
+          { to: `/accounts/${accountId}/bot`, label: 'Flujo del bot', icon: Workflow },
+          { to: `/accounts/${accountId}/settings`, label: 'Configuración', icon: Settings },
+        ]
       : []),
   ]
 

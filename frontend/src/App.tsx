@@ -8,6 +8,7 @@ import { InboxLayout } from '@/routes/InboxLayout'
 import { LoginPage } from '@/routes/LoginPage'
 import { NoThreadSelected } from '@/routes/NoThreadSelected'
 import { RootRedirect } from '@/routes/RootRedirect'
+import { SettingsPage } from '@/routes/SettingsPage'
 import { TeamPage } from '@/routes/TeamPage'
 import { ThreadPage } from '@/routes/ThreadPage'
 
@@ -28,6 +29,7 @@ function App() {
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="team" element={<TeamPage />} />
         <Route path="bot" element={<BotFlowPage />} />
+        <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
