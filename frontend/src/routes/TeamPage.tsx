@@ -52,7 +52,15 @@ import {
   removeMember,
   removeTeamMember,
 } from '@/lib/endpoints'
-import { ASSIGNABLE_ROLES, isAdmin, isElevated, ROLE_HINT, ROLE_LABEL } from '@/lib/roles'
+import {
+  ASSIGNABLE_ROLES,
+  assignableRolesFor,
+  canManageMembers,
+  isAdmin,
+  isElevated,
+  ROLE_HINT,
+  ROLE_LABEL,
+} from '@/lib/roles'
 import type { AccountRoleValue } from '@/types/api'
 
 export function TeamPage() {
@@ -102,7 +110,7 @@ function MembersTab({
   currentUserId?: string
 }) {
   const queryClient = useQueryClient()
-  const canManage = isAdmin(role)
+  const canManage = canManageMembers(role)
   const [adding, setAdding] = React.useState(false)
 
   const { data: members, isLoading } = useQuery({
@@ -178,7 +186,9 @@ function MembersTab({
                   </TableCell>
                   {canManage && (
                     <TableCell className="pr-4 text-right">
-                      {m.user_id !== currentUserId && (
+                      {/* Un supervisor ve la columna (para sumar) pero solo
+                          puede sacar asesores -- mismo límite que el backend. */}
+                      {m.user_id !== currentUserId && (isAdmin(role) || m.role === 'agent') && (
                         <Button
                           variant="destructive-ghost"
                           size="xs"
@@ -221,20 +231,23 @@ function MembersTab({
         </dl>
       </div>
 
-      <AddMemberDialog accountId={accountId} open={adding} onOpenChange={setAdding} />
+      <AddMemberDialog accountId={accountId} actorRole={role} open={adding} onOpenChange={setAdding} />
     </section>
   )
 }
 
 function AddMemberDialog({
   accountId,
+  actorRole,
   open,
   onOpenChange,
 }: {
   accountId: string
+  actorRole: string | null
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const assignableRoles = assignableRolesFor(actorRole)
   const queryClient = useQueryClient()
   const [email, setEmail] = React.useState('')
   const [name, setName] = React.useState('')
@@ -340,21 +353,29 @@ function AddMemberDialog({
             </p>
           </div>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="member-role">Rol</Label>
-            <Select
-              id="member-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as AccountRoleValue)}
-            >
-              {ASSIGNABLE_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABEL[r]}
-                </option>
-              ))}
-            </Select>
-            <p className="text-xs text-muted-foreground">{ROLE_HINT[role]}</p>
-          </div>
+          {assignableRoles.length > 1 && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="member-role">Rol</Label>
+              <Select
+                id="member-role"
+                value={role}
+                onChange={(e) => setRole(e.target.value as AccountRoleValue)}
+              >
+                {assignableRoles.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r]}
+                  </option>
+                ))}
+              </Select>
+              <p className="text-xs text-muted-foreground">{ROLE_HINT[role]}</p>
+            </div>
+          )}
+          {assignableRoles.length <= 1 && (
+            <p className="text-xs text-muted-foreground">
+              Como supervisor, sumás gente como <strong>{ROLE_LABEL.agent}</strong>. Para otros
+              roles pedile a un administrador.
+            </p>
+          )}
 
           {error && (
             <div

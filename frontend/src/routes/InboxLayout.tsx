@@ -185,7 +185,7 @@ export function InboxLayout() {
                 onClick={() => setFilter(f.value)}
                 aria-pressed={active}
                 className={cn(
-                  'inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[11.5px] font-medium transition-colors duration-150',
+                  'inline-flex shrink-0 items-center gap-1.5 rounded-full border pr-1.5 pl-2.5 py-1 text-[11.5px] font-medium transition-colors duration-150',
                   active
                     ? 'border-transparent bg-primary text-primary-foreground'
                     : 'border-border text-muted-foreground hover:bg-surface-2 hover:text-foreground',
@@ -194,7 +194,14 @@ export function InboxLayout() {
                 {f.value !== 'all' && !active && <StatusDot status={f.value} />}
                 {f.label}
                 {counts[f.value] !== undefined && (
-                  <span className={cn('tabular', !active && 'text-muted-foreground/70')}>
+                  <span
+                    className={cn(
+                      'tabular min-w-4 rounded-full px-1 py-px text-center text-[10.5px] leading-[15px] font-semibold',
+                      active
+                        ? 'bg-primary-foreground/20 text-primary-foreground'
+                        : 'bg-surface-2 text-muted-foreground/80',
+                    )}
+                  >
                     {counts[f.value]}
                   </span>
                 )}

@@ -47,7 +47,7 @@ class CreateToolRequest(BaseModel):
 
     name: str
     description: str
-    kind: Literal["http", "sql"]
+    kind: Literal["http", "sql", "document"]
     config: dict[str, Any]
     secret: dict[str, Any] | None = None
     schema_: dict[str, Any] = Field(default_factory=dict, alias="schema")

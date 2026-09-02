@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { EmptyState } from '@/components/EmptyState'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
 import {
   Dialog,
   DialogContent,
@@ -228,23 +229,18 @@ function ModelDiscoveryField({
           Descubrir modelos
         </Button>
       </div>
-      {models.length > 0 ? (
-        <Select id="provider-model" value={model} onChange={(e) => onModelChange(e.target.value)}>
-          {models.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </Select>
-      ) : (
-        <Input
-          id="provider-model"
-          required
-          className="font-mono"
-          placeholder="gpt-4o, claude-sonnet-4-5, ..."
-          value={model}
-          onChange={(e) => onModelChange(e.target.value)}
-        />
+      <Combobox
+        id="provider-model"
+        value={model}
+        onChange={onModelChange}
+        options={models}
+        placeholder="gpt-4o, claude-sonnet-4-5, ..."
+        emptyText="Ningún modelo descubierto coincide -- podés dejarlo tal cual y escribirlo a mano."
+      />
+      {models.length > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {models.length} modelos disponibles -- escribí para filtrar, ej. "free".
+        </p>
       )}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>

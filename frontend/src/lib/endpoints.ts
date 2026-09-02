@@ -22,6 +22,7 @@ import type {
   MemberResponse,
   MessageResponse,
   StatsResponse,
+  TestChatResponse,
   TeamMemberResponse,
   TeamResponse,
   TemplateResponse,
@@ -225,6 +226,13 @@ export function activateBotVersion(accountId: string, versionId: string) {
 
 export function getAvailableTools(accountId: string) {
   return apiFetch<AvailableToolResponse[]>(`/accounts/${accountId}/bot/available-tools`)
+}
+
+export function testChat(accountId: string, body: { message: string; session_id?: string }) {
+  return apiFetch<TestChatResponse>(`/accounts/${accountId}/bot/test-chat`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 // --------------------------------------------------------------------------

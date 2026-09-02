@@ -22,6 +22,13 @@ class ToolValidationError(Exception):
     pass
 
 
+# Un documento entero vive en config.text (jsonb) -- generoso para "un
+# documento de referencia", pero documentos más grandes que esto deberían
+# ir a una base de conocimiento (ingesta + búsqueda semántica) en vez de
+# acá, donde la "búsqueda" es un substring plano.
+_DOCUMENT_MAX_CHARS = 300_000
+
+
 def validate_tool_config(kind: str, config: dict) -> None:
     """
     Se corre antes de guardar, para no dejar creada una tool que nunca va a
@@ -35,8 +42,19 @@ def validate_tool_config(kind: str, config: dict) -> None:
             check_url_is_safe(config["url"])
         elif kind == "sql":
             check_query_is_readonly(config["query"])
+        elif kind == "document":
+            text = config.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise ToolValidationError("falta la clave 'text' en config (no puede estar vacía)")
+            if len(text) > _DOCUMENT_MAX_CHARS:
+                raise ToolValidationError(
+                    f"el documento supera los {_DOCUMENT_MAX_CHARS:,} caracteres -- "
+                    "para algo así de grande usá una base de conocimiento en vez de esta tool"
+                )
         else:
-            raise ToolValidationError(f"kind no soportado: {kind!r} (usar 'http' o 'sql')")
+            raise ToolValidationError(
+                f"kind no soportado: {kind!r} (usar 'http', 'sql' o 'document')"
+            )
     except (UnsafeURLError, UnsafeQueryError) as e:
         raise ToolValidationError(str(e)) from None
     except KeyError as e:

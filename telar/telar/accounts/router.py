@@ -2,8 +2,12 @@
 Endpoints de cuentas, membresía y equipos.
 
 administrator gestiona quién pertenece a la cuenta y qué equipos existen;
-supervisor puede mover gente dentro/fuera de un equipo pero no dar de
-alta/baja en la cuenta ni crear equipos; agent no gestiona nada de esto.
+supervisor puede sumar/sacar *asesores* (nunca administradores ni otros
+supervisores -- ver _guard_supervisor_role) y mover gente dentro/fuera de
+un equipo, pero no crear equipos ni la cuenta misma; agent no gestiona
+nada de esto. Ni supervisor ni agent pueden tocar inboxes, proveedor LLM,
+tools, bases de conocimiento, base de datos de la cuenta ni el hilo del
+bot -- esos routers exigen ADMINISTRATOR aparte, sin cambios acá.
 """
 
 from __future__ import annotations
@@ -107,12 +111,28 @@ async def list_accounts(user: dict = Depends(get_current_user)) -> list[AccountR
     return [AccountResponse(**row) for row in rows]
 
 
+def _guard_supervisor_role(membership: Membership, role: AccountRole) -> None:
+    """Un supervisor puede sumar o sacar asesores, nunca administradores ni
+    otros supervisores -- evita que se autopromueva o promueva a alguien
+    más sin pasar por un administrator real. Superadmin y administrator no
+    tienen esta restricción."""
+    if membership.is_superadmin or membership.role == AccountRole.ADMINISTRATOR:
+        return
+    if role != AccountRole.AGENT:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Un supervisor solo puede sumar o sacar asesores"
+        )
+
+
 @router.post("/{account_id}/members", response_model=MemberResponse)
 async def add_member(
     account_id: UUID,
     body: AddMemberRequest,
-    membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR)),
+    membership: Membership = Depends(
+        require_role(AccountRole.ADMINISTRATOR, AccountRole.SUPERVISOR)
+    ),
 ) -> MemberResponse:
+    _guard_supervisor_role(membership, body.role)
     target = await repo.get_user_by_email(body.email)
     temporary_password: str | None = None
 
@@ -152,8 +172,14 @@ async def list_members(
 async def remove_member(
     account_id: UUID,
     user_id: UUID,
-    membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR)),
+    membership: Membership = Depends(
+        require_role(AccountRole.ADMINISTRATOR, AccountRole.SUPERVISOR)
+    ),
 ) -> None:
+    if not (membership.is_superadmin or membership.role == AccountRole.ADMINISTRATOR):
+        target = await repo.get_account_membership(account_id, user_id)
+        target_role = AccountRole(target["role"]) if target else None
+        _guard_supervisor_role(membership, target_role or AccountRole.ADMINISTRATOR)
     await repo.delete_account_membership(account_id, user_id)
 
 

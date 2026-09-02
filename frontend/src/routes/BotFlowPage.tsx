@@ -14,7 +14,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Braces, History, Loader2, Plus, RotateCcw, Save, X } from 'lucide-react'
+import { Braces, History, Loader2, Plus, RotateCcw, Save, TestTube2, X } from 'lucide-react'
 import * as React from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -24,6 +24,7 @@ import { EndpointNode, type EndpointNodeData } from '@/components/flow/EndpointN
 import { OutputConfigPanel } from '@/components/flow/OutputConfigPanel'
 import { InboxConnectionPanel } from '@/components/flow/InboxConnectionPanel'
 import { NodeEditPanel } from '@/components/flow/NodeEditPanel'
+import { TestChatPanel } from '@/components/flow/TestChatPanel'
 import { TriggerNode, type TriggerNodeData } from '@/components/flow/TriggerNode'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -77,6 +78,7 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null)
   const [showJson, setShowJson] = React.useState(false)
+  const [testChatOpen, setTestChatOpen] = React.useState(false)
   const [versionsOpen, setVersionsOpen] = React.useState(false)
   const [hydrated, setHydrated] = React.useState(false)
   const [dirty, setDirty] = React.useState(false)
@@ -203,6 +205,7 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
         ? node.id
         : null,
     )
+    setTestChatOpen(false)
   }
 
   function handleNodeDataChange(nodeId: string, data: AgentNodeData) {
@@ -255,10 +258,28 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
             <Plus />
             Agregar nodo
           </Button>
+          {canManageVersions && (
+            <Button
+              variant={testChatOpen ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => {
+                setTestChatOpen((v) => !v)
+                setSelectedNodeId(null)
+                setShowJson(false)
+              }}
+              aria-pressed={testChatOpen}
+            >
+              <TestTube2 />
+              Probar
+            </Button>
+          )}
           <Button
             variant={showJson ? 'secondary' : 'ghost'}
             size="sm"
-            onClick={() => setShowJson((v) => !v)}
+            onClick={() => {
+              setShowJson((v) => !v)
+              setTestChatOpen(false)
+            }}
             aria-pressed={showJson}
           >
             <Braces />
@@ -334,6 +355,10 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
               {JSON.stringify(graphPreview, null, 2)}
             </pre>
           </aside>
+        )}
+
+        {testChatOpen && !selectedNode && (
+          <TestChatPanel accountId={accountId} onClose={() => setTestChatOpen(false)} />
         )}
 
         {selectedNode?.type === 'agent' && (

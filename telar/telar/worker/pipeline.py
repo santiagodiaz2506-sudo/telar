@@ -12,16 +12,14 @@ import asyncio
 import logging
 
 from langchain_core.messages import HumanMessage, ToolMessage
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-
 from telar.agent import graph_cache
+from telar.agent.checkpointer import get_checkpointer
 from telar.agent.tools import escalar_a_humano
 from telar.channels.meta import MetaWhatsAppAdapter, resolve_inbox_credentials
 from telar.config import settings
 from telar.core import state as st
 from telar.core.types import InboundMessage, OutboundMessage, SenderType
 from telar.db import repositories as repo
-from telar.db.pool import get_pool
 
 log = logging.getLogger(__name__)
 
@@ -29,22 +27,14 @@ log = logging.getLogger(__name__)
 class Pipeline:
     def __init__(self, adapter: MetaWhatsAppAdapter) -> None:
         self.adapter = adapter
-        self._checkpointer = None
         # Tope global de invocaciones concurrentes al LLM: protege el pool
         # de Postgres y el rate limit del proveedor de un pico de tráfico.
         self._semaphore = asyncio.Semaphore(
             settings().rate_limit_max_concurrent_agent_calls
         )
 
-    async def _get_checkpointer(self):
-        if self._checkpointer is None:
-            pool = await get_pool()
-            self._checkpointer = AsyncPostgresSaver(pool)
-            await self._checkpointer.setup()
-        return self._checkpointer
-
     async def _get_graph(self, account_id):
-        checkpointer = await self._get_checkpointer()
+        checkpointer = await get_checkpointer()
         return await graph_cache.get_or_build(account_id, checkpointer)
 
     async def handle(self, batch: list[InboundMessage]) -> None:

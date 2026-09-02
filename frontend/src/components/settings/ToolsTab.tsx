@@ -34,15 +34,84 @@ import type { ToolAdminResponse, ToolKind } from '@/types/api'
 const CONFIG_PLACEHOLDER: Record<ToolKind, string> = {
   http: '{\n  "url": "https://api.tuempresa.com/pedidos",\n  "method": "GET",\n  "timeout_seconds": 10\n}',
   sql: '{\n  "query": "SELECT * FROM pedidos WHERE id = $1"\n}',
+  document: '', // document no usa este campo -- ver DOCUMENT_TEXT_PLACEHOLDER
 }
 
 const SECRET_PLACEHOLDER: Record<ToolKind, string> = {
   http: '{\n  "headers": {"Authorization": "Bearer ..."}\n}',
   sql: '{\n  "connection_string": "postgresql://..."\n}',
+  document: '', // document no tiene secreto: no llama a nada externo
+}
+
+const DOCUMENT_TEXT_PLACEHOLDER =
+  'Pegá acá el contenido -- preguntas frecuentes, políticas, catálogo en texto plano...'
+
+const KIND_HINT: Record<ToolKind, string> = {
+  http: 'Llama una API externa que ya tenés.',
+  sql: 'Consulta tu propia base de datos, siempre de solo lectura.',
+  document: 'Un documento de referencia. Sin embeddings ni proveedor de LLM externo.',
 }
 
 const SCHEMA_PLACEHOLDER =
   '{\n  "properties": {\n    "order_id": {"type": "string", "description": "número de pedido"}\n  },\n  "required": ["order_id"]\n}'
+
+interface ToolTemplate {
+  key: string
+  label: string
+  name: string
+  description: string
+  config: Record<string, unknown>
+  schema: Record<string, unknown>
+  secret: Record<string, unknown>
+}
+
+/**
+ * Plantillas de arranque rápido -- apuntan a URLs de ejemplo, claramente falsas.
+ * La idea es no partir de un textarea vacío: se elige una, se reemplaza la URL
+ * (y el token) por los reales, y ya queda una tool http andando.
+ */
+const TOOL_TEMPLATES: ToolTemplate[] = [
+  {
+    key: 'consultar_estado_pedido',
+    label: 'Estado de pedido',
+    name: 'consultar_estado_pedido',
+    description: 'Busca el estado de un pedido por su número.',
+    config: { url: 'https://api.tu-erp.com/pedidos', method: 'GET', timeout_seconds: 10 },
+    schema: {
+      properties: { order_id: { type: 'string', description: 'número de pedido' } },
+      required: ['order_id'],
+    },
+    secret: { headers: { Authorization: 'Bearer TU_TOKEN_AQUI' } },
+  },
+  {
+    key: 'consultar_disponibilidad',
+    label: 'Consultar disponibilidad',
+    name: 'consultar_disponibilidad',
+    description: 'Consulta los horarios disponibles para agendar una cita en una fecha dada.',
+    config: { url: 'https://api.tu-calendario.com/disponibilidad', method: 'GET', timeout_seconds: 10 },
+    schema: {
+      properties: { fecha: { type: 'string', description: 'fecha a consultar, formato YYYY-MM-DD' } },
+      required: ['fecha'],
+    },
+    secret: { headers: { Authorization: 'Bearer TU_TOKEN_AQUI' } },
+  },
+  {
+    key: 'agendar_cita',
+    label: 'Agendar cita',
+    name: 'agendar_cita',
+    description: 'Agenda una cita en la fecha y hora indicadas.',
+    config: { url: 'https://api.tu-calendario.com/citas', method: 'POST', timeout_seconds: 10 },
+    schema: {
+      properties: {
+        fecha: { type: 'string', description: 'fecha, formato YYYY-MM-DD' },
+        hora: { type: 'string', description: 'hora, formato HH:MM' },
+        nombre_cliente: { type: 'string', description: 'nombre de quien agenda' },
+      },
+      required: ['fecha', 'hora', 'nombre_cliente'],
+    },
+    secret: { headers: { Authorization: 'Bearer TU_TOKEN_AQUI' } },
+  },
+]
 
 function parseJsonField(raw: string, label: string): Record<string, unknown> | undefined {
   const trimmed = raw.trim()
@@ -74,8 +143,9 @@ export function ToolsTab({ accountId }: { accountId: string }) {
         <div className="flex-1">
           <h2 className="text-sm font-semibold">Herramientas</h2>
           <p className="mt-0.5 text-[13px] text-muted-foreground">
-            Tools http (API externa) o sql (solo lectura) que el agente puede decidir llamar. Antes
-            esto era un JSON local y un script.
+            Tools http (API externa), sql (solo lectura) o document (un documento de texto, sin
+            embeddings) que el agente puede decidir llamar. Antes esto era un JSON local y un
+            script.
           </p>
         </div>
         <Button size="sm" onClick={() => setCreating(true)}>
@@ -197,7 +267,9 @@ function CreateToolDialog({
   const [config, setConfig] = React.useState('')
   const [schema, setSchema] = React.useState('')
   const [secret, setSecret] = React.useState('')
+  const [documentText, setDocumentText] = React.useState('')
   const [error, setError] = React.useState<string | null>(null)
+  const isDocument = kind === 'document'
 
   function reset() {
     setName('')
@@ -206,6 +278,7 @@ function CreateToolDialog({
     setConfig('')
     setSchema('')
     setSecret('')
+    setDocumentText('')
     setError(null)
   }
 
@@ -214,8 +287,28 @@ function CreateToolDialog({
     onOpenChange(next)
   }
 
+  function applyTemplate(template: ToolTemplate) {
+    setKind('http')
+    setName(template.name)
+    setDescription(template.description)
+    setConfig(JSON.stringify(template.config, null, 2))
+    setSchema(JSON.stringify(template.schema, null, 2))
+    setSecret(JSON.stringify(template.secret, null, 2))
+    setDocumentText('')
+    setError(null)
+  }
+
   const create = useMutation({
     mutationFn: () => {
+      if (isDocument) {
+        if (!documentText.trim()) throw new Error('Pegá el contenido del documento')
+        return createTool(accountId, {
+          name: name.trim(),
+          description: description.trim(),
+          kind,
+          config: { text: documentText },
+        })
+      }
       const parsedConfig = parseJsonField(config, 'La configuración')
       if (!parsedConfig) throw new Error('La configuración es obligatoria')
       const parsedSchema = parseJsonField(schema, 'El schema')
@@ -250,6 +343,26 @@ function CreateToolDialog({
             El tipo no se puede cambiar después de crearla. sql siempre corre en modo solo lectura.
           </DialogDescription>
         </DialogHeader>
+        <div className="flex flex-col gap-1.5 rounded-lg border border-dashed border-border bg-surface-2/50 p-3">
+          <p className="text-xs font-medium text-foreground">Empezar desde una plantilla</p>
+          <div className="flex flex-wrap gap-1.5">
+            {TOOL_TEMPLATES.map((template) => (
+              <Button
+                key={template.key}
+                type="button"
+                variant="outline"
+                size="xs"
+                onClick={() => applyTemplate(template)}
+              >
+                {template.label}
+              </Button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Llenan el formulario con una URL de ejemplo -- reemplazá la URL y el token por los
+            reales antes de crear la herramienta.
+          </p>
+        </div>
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {
@@ -276,9 +389,11 @@ function CreateToolDialog({
               <Select id="tool-kind" value={kind} onChange={(e) => setKind(e.target.value as ToolKind)}>
                 <option value="http">http — API externa</option>
                 <option value="sql">sql — solo lectura</option>
+                <option value="document">document — un documento, sin embeddings</option>
               </Select>
             </div>
           </div>
+          <p className="-mt-2 text-xs text-muted-foreground">{KIND_HINT[kind]}</p>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="tool-description">Descripción</Label>
             <Textarea
@@ -292,40 +407,61 @@ function CreateToolDialog({
               Esto es lo que el modelo lee para decidir cuándo llamarla. Sé específico.
             </p>
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="tool-config">Config (JSON)</Label>
-            <Textarea
-              id="tool-config"
-              required
-              className="font-mono text-[12.5px]"
-              placeholder={CONFIG_PLACEHOLDER[kind]}
-              value={config}
-              onChange={(e) => setConfig(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="tool-schema">Schema de parámetros (JSON, opcional)</Label>
-            <Textarea
-              id="tool-schema"
-              className="font-mono text-[12.5px]"
-              placeholder={SCHEMA_PLACEHOLDER}
-              value={schema}
-              onChange={(e) => setSchema(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="tool-secret">Secreto (JSON, opcional)</Label>
-            <Textarea
-              id="tool-secret"
-              className="font-mono text-[12.5px]"
-              placeholder={SECRET_PLACEHOLDER[kind]}
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Se cifra antes de guardarse; no vuelve a mostrarse tal cual.
-            </p>
-          </div>
+          {isDocument ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="tool-document-text">Contenido del documento</Label>
+              <Textarea
+                id="tool-document-text"
+                required
+                className="min-h-40 text-[13px]"
+                placeholder={DOCUMENT_TEXT_PLACEHOLDER}
+                value={documentText}
+                onChange={(e) => setDocumentText(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Texto plano, sin JSON. El agente lo lee tal cual -- sin buscar por similitud ni
+                depender de otro proveedor de LLM. Para documentos muy largos (varios cientos de
+                páginas) conviene una base de conocimiento en cambio.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="tool-config">Config (JSON)</Label>
+                <Textarea
+                  id="tool-config"
+                  required
+                  className="font-mono text-[12.5px]"
+                  placeholder={CONFIG_PLACEHOLDER[kind]}
+                  value={config}
+                  onChange={(e) => setConfig(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="tool-schema">Schema de parámetros (JSON, opcional)</Label>
+                <Textarea
+                  id="tool-schema"
+                  className="font-mono text-[12.5px]"
+                  placeholder={SCHEMA_PLACEHOLDER}
+                  value={schema}
+                  onChange={(e) => setSchema(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="tool-secret">Secreto (JSON, opcional)</Label>
+                <Textarea
+                  id="tool-secret"
+                  className="font-mono text-[12.5px]"
+                  placeholder={SECRET_PLACEHOLDER[kind]}
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Se cifra antes de guardarse; no vuelve a mostrarse tal cual.
+                </p>
+              </div>
+            </>
+          )}
 
           {error && (
             <p role="alert" className="rounded-md bg-destructive-soft px-3 py-2.5 text-[13px] text-destructive">
@@ -340,7 +476,12 @@ function CreateToolDialog({
             <Button
               type="submit"
               size="sm"
-              disabled={create.isPending || !name.trim() || !description.trim() || !config.trim()}
+              disabled={
+                create.isPending ||
+                !name.trim() ||
+                !description.trim() ||
+                (isDocument ? !documentText.trim() : !config.trim())
+              }
             >
               Crear
             </Button>
@@ -366,8 +507,10 @@ function EditToolDialog({
   const [config, setConfig] = React.useState('')
   const [schema, setSchema] = React.useState('')
   const [secret, setSecret] = React.useState('')
+  const [documentText, setDocumentText] = React.useState('')
   const [enabled, setEnabled] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  const isDocument = tool?.kind === 'document'
 
   React.useEffect(() => {
     if (tool) {
@@ -376,6 +519,7 @@ function EditToolDialog({
       setConfig(JSON.stringify(tool.config, null, 2))
       setSchema(tool.schema ? JSON.stringify(tool.schema, null, 2) : '')
       setSecret('')
+      setDocumentText(typeof tool.config.text === 'string' ? tool.config.text : '')
       setEnabled(tool.enabled)
       setError(null)
     }
@@ -383,6 +527,15 @@ function EditToolDialog({
 
   const update = useMutation({
     mutationFn: () => {
+      if (isDocument) {
+        if (!documentText.trim()) throw new Error('El documento no puede quedar vacío')
+        return updateTool(accountId, tool!.id, {
+          name: name.trim(),
+          description: description.trim(),
+          config: { text: documentText },
+          enabled,
+        })
+      }
       const parsedConfig = parseJsonField(config, 'La configuración')
       if (!parsedConfig) throw new Error('La configuración es obligatoria')
       const parsedSchema = parseJsonField(schema, 'El schema')
@@ -444,35 +597,50 @@ function EditToolDialog({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-tool-config">Config (JSON)</Label>
-            <Textarea
-              id="edit-tool-config"
-              required
-              className="font-mono text-[12.5px]"
-              value={config}
-              onChange={(e) => setConfig(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-tool-schema">Schema de parámetros (JSON, opcional)</Label>
-            <Textarea
-              id="edit-tool-schema"
-              className="font-mono text-[12.5px]"
-              value={schema}
-              onChange={(e) => setSchema(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-tool-secret">Secreto nuevo (JSON, opcional)</Label>
-            <Textarea
-              id="edit-tool-secret"
-              className="font-mono text-[12.5px]"
-              placeholder="Dejar vacío para no cambiar el secreto guardado"
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-            />
-          </div>
+          {isDocument ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit-tool-document-text">Contenido del documento</Label>
+              <Textarea
+                id="edit-tool-document-text"
+                required
+                className="min-h-40 text-[13px]"
+                value={documentText}
+                onChange={(e) => setDocumentText(e.target.value)}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-tool-config">Config (JSON)</Label>
+                <Textarea
+                  id="edit-tool-config"
+                  required
+                  className="font-mono text-[12.5px]"
+                  value={config}
+                  onChange={(e) => setConfig(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-tool-schema">Schema de parámetros (JSON, opcional)</Label>
+                <Textarea
+                  id="edit-tool-schema"
+                  className="font-mono text-[12.5px]"
+                  value={schema}
+                  onChange={(e) => setSchema(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="edit-tool-secret">Secreto nuevo (JSON, opcional)</Label>
+                <Textarea
+                  id="edit-tool-secret"
+                  className="font-mono text-[12.5px]"
+                  placeholder="Dejar vacío para no cambiar el secreto guardado"
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                />
+              </div>
+            </>
+          )}
           <label className="flex items-center gap-2 text-sm">
             <input
               type="checkbox"
@@ -496,7 +664,12 @@ function EditToolDialog({
             <Button
               type="submit"
               size="sm"
-              disabled={update.isPending || !name.trim() || !description.trim() || !config.trim()}
+              disabled={
+                update.isPending ||
+                !name.trim() ||
+                !description.trim() ||
+                (isDocument ? !documentText.trim() : !config.trim())
+              }
             >
               Guardar
             </Button>

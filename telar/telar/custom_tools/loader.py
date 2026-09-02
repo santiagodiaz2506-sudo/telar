@@ -1,6 +1,6 @@
 """
-Arma las tools configurables (http, sql) de una cuenta como BaseTool de
-LangChain, listas para sumarse a TOOLS antes de bind_tools().
+Arma las tools configurables (http, sql, document) de una cuenta como
+BaseTool de LangChain, listas para sumarse a TOOLS antes de bind_tools().
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from uuid import UUID
 
 from langchain_core.tools import BaseTool
 
+from telar.custom_tools.document_tool import build_document_tool
 from telar.custom_tools.http_tool import build_http_tool
 from telar.custom_tools.secrets import decrypt_secret
 from telar.custom_tools.sql_tool import build_sql_tool
@@ -20,6 +21,7 @@ log = logging.getLogger(__name__)
 _BUILDERS = {
     "http": build_http_tool,
     "sql": build_sql_tool,
+    "document": build_document_tool,
 }
 
 

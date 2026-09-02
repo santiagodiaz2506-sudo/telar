@@ -8,16 +8,20 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from langchain_core.messages import HumanMessage, ToolMessage
 from pydantic import BaseModel
 
 from telar.agent import graph_cache
+from telar.agent.checkpointer import get_checkpointer
 from telar.agent.compiler import GraphCompileError, compile_graph
 from telar.agent.graph import TOOLS
+from telar.agent.tools import escalar_a_humano
 from telar.auth.dependencies import Membership, require_role
 from telar.auth.roles import AccountRole
+from telar.config import settings
 from telar.custom_tools.loader import build_custom_tools
 from telar.db import repositories as repo
 
@@ -140,3 +144,57 @@ async def list_available_tools(
         AvailableToolResponse(name=t.name, description=t.description)
         for t in TOOLS + extra_tools
     ]
+
+
+class TestChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None  # None = arrancar una sesión de prueba nueva
+
+
+class TestChatResponse(BaseModel):
+    session_id: str
+    reply: str
+    would_escalate: bool
+
+
+@router.post("/test-chat", response_model=TestChatResponse)
+async def test_chat(
+    account_id: UUID,
+    body: TestChatRequest,
+    membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR)),
+) -> TestChatResponse:
+    """
+    Habla con el bot de la cuenta tal cual está configurado hoy -- mismo
+    grafo, tools y modelo que en producción -- sin crear ni tocar ningún
+    contacto o conversación real. La memoria de esta sesión de prueba vive
+    en el mismo checkpointer que las conversaciones reales, pero con un
+    thread_id bajo el prefijo "test:" que ningún contact_id real puede
+    generar, así que nunca se cruza con una conversación de verdad.
+
+    Si el agente llama a escalar_a_humano, acá no se dispara ningún
+    traspaso real (no hay conversación que soltar) -- would_escalate le
+    avisa a quien prueba que en producción esto habría pasado a un asesor.
+    """
+    session_id = body.session_id or str(uuid4())
+    thread_id = f"test:{account_id}:{session_id}"
+
+    checkpointer = await get_checkpointer()
+    graph = await graph_cache.get_or_build(account_id, checkpointer)
+
+    result = await graph.ainvoke(
+        {
+            "messages": [HumanMessage(content=body.message)],
+            "system_prompt": settings().default_system_prompt,
+            "account_id": str(account_id),
+        },
+        config={"configurable": {"thread_id": thread_id}},
+    )
+
+    reply_msg = result["messages"][-1]
+    reply = reply_msg.content if isinstance(reply_msg.content, str) else str(reply_msg.content)
+    would_escalate = any(
+        isinstance(m, ToolMessage) and m.name == escalar_a_humano.name
+        for m in result["messages"][-3:]
+    )
+
+    return TestChatResponse(session_id=session_id, reply=reply, would_escalate=would_escalate)

@@ -158,7 +158,7 @@ export interface InboxResponse {
   created_at: string
 }
 
-export type ToolKind = 'http' | 'sql'
+export type ToolKind = 'http' | 'sql' | 'document'
 
 export interface ToolResponse {
   id: string
@@ -207,6 +207,12 @@ export interface DatabaseConnectionResponse {
 export interface TestConnectionResponse {
   ok: boolean
   error: string | null
+}
+
+export interface TestChatResponse {
+  session_id: string
+  reply: string
+  would_escalate: boolean
 }
 
 export interface KnowledgeBaseResponse {
