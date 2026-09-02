@@ -1,32 +1,40 @@
-# React + TypeScript + Vite
+# Telar -- frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Panel de administración (React 19 + TypeScript + Vite + Tailwind v4). Habla
+con el backend (`../telar/`) exclusivamente por HTTP, vía `VITE_API_URL`.
 
-Currently, two official plugins are available:
+## Desarrollo
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Sin `VITE_API_URL` en el entorno, apunta a `http://localhost:8000` (ver
+`src/lib/api.ts`) -- alcanza para desarrollar contra el backend local.
+
+## Deploy a Cloudflare Pages
+
+Es un build estático (`vite build` genera `dist/`), no necesita Docker ni
+un proceso corriendo -- encaja directo con Cloudflare Pages, plan gratis.
+
+1. En el dashboard de Cloudflare: **Workers & Pages -> Create -> Pages ->
+   Connect to Git**, elegí este repo.
+2. **Root directory**: `frontend` (el repo tiene el backend al lado, en
+   `telar/`).
+3. **Build command**: `npm run build`
+4. **Build output directory**: `dist`
+5. Variable de entorno de build: `VITE_API_URL` = la URL pública del
+   backend (por ejemplo `https://api.tudominio.com`) -- sin esto el panel
+   desplegado sigue apuntando a `localhost:8000` y no va a poder loguear.
+6. Deploy. Cloudflare te da un dominio `*.pages.dev`; para uno propio,
+   `Custom domains` en el mismo proyecto.
+
+El archivo `public/_redirects` (`/* /index.html 200`) ya está para que las
+rutas de React Router (`/accounts/:id/...`) no den 404 al recargar la
+página o entrar por link directo -- Cloudflare Pages lo lee solo, sin
+configuración adicional.
+
+Después de desplegar, en el backend (`telar/.env`) `FRONTEND_ORIGIN` tiene
+que ser exactamente ese dominio (CORS acepta un solo origin, no `*`) --
+ver `telar/.env.example`.

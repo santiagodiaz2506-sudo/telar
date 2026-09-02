@@ -1,6 +1,7 @@
 services:
   db:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: telar
       POSTGRES_PASSWORD: telar
@@ -17,6 +18,7 @@ services:
 
   api:
     build: .
+    restart: unless-stopped
     env_file: .env
     environment:
       DATABASE_URL: postgresql://telar:telar@db:5432/telar
@@ -26,14 +28,17 @@ services:
     ports:
       - "8000:8000"
 
-  # Solo para desarrollo: expone el webhook sin abrir puertos ni tener IP fija.
-  # En producción usa tu propio reverse proxy con TLS.
+  # Opcional: expone el webhook por HTTPS sin abrir puertos ni tener IP fija.
+  # Sirve tanto para desarrollo como para producción -- ver README, sección
+  # de despliegue. Se activa aparte (perfil "tunnel") porque exige tener ya
+  # un túnel creado en el dashboard de Cloudflare con su token.
   tunnel:
     image: cloudflare/cloudflared:latest
+    restart: unless-stopped
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
       - api
-    profiles: ["dev"]
+    profiles: ["tunnel"]
 
 volumes:
   telar_db:

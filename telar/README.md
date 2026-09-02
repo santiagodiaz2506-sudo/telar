@@ -66,13 +66,18 @@ El esquema se aplica solo la primera vez que arranca la base de datos.
 
 ### Exponer el webhook
 
-Meta necesita una URL pública con HTTPS. En desarrollo:
+Meta necesita una URL pública con HTTPS. Cloudflare Tunnel sirve tanto para
+desarrollo como para producción -- creá un túnel en el dashboard de
+Cloudflare (Zero Trust → Networks → Tunnels), pegá su token en
+`CLOUDFLARE_TUNNEL_TOKEN` y levantalo aparte:
 
 ```bash
-docker compose --profile dev up tunnel
+docker compose --profile tunnel up -d tunnel
 ```
 
-Con el token de tu túnel de Cloudflare en `CLOUDFLARE_TUNNEL_TOKEN`. En producción usa tu propio reverse proxy; el túnel es una comodidad de desarrollo, no parte del núcleo.
+Si preferís tu propio reverse proxy con TLS (nginx, Caddy, otro) en vez del
+túnel, también funciona -- el servicio `tunnel` es opcional, no parte del
+núcleo.
 
 En la consola de Meta, apunta el webhook a `https://tu-dominio/webhooks/whatsapp`, pega el mismo verify token y suscríbete al campo `messages`.
 
