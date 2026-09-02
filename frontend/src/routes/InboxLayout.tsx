@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/lib/auth'
 import { getConversations, getStats, PAGE_SIZE } from '@/lib/endpoints'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { cn } from '@/lib/utils'
 import type { ConversationStatusValue } from '@/types/api'
 
@@ -33,6 +34,7 @@ export function InboxLayout() {
   const navigate = useNavigate()
   const [filter, setFilter] = React.useState<Filter>('all')
   const [query, setQuery] = React.useState('')
+  const debouncedQuery = useDebouncedValue(query.trim(), 300)
   const searchRef = React.useRef<HTMLInputElement>(null)
 
   /**
@@ -48,10 +50,11 @@ export function InboxLayout() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['conversations', accountId, 'list', filter],
+    queryKey: ['conversations', accountId, 'list', filter, debouncedQuery],
     queryFn: ({ pageParam }) =>
       getConversations(accountId!, filter === 'all' ? undefined : filter, {
         offset: pageParam,
+        q: debouncedQuery || undefined,
       }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) =>
@@ -79,16 +82,9 @@ export function InboxLayout() {
     resolved: stats?.resolved,
   }
 
-  const visible = React.useMemo(() => {
-    if (!conversations) return []
-    const q = query.trim().toLowerCase()
-    if (!q) return conversations
-    return conversations.filter(
-      (c) =>
-        c.contact_name?.toLowerCase().includes(q) ||
-        c.contact_phone?.replace(/\D/g, '').includes(q.replace(/\D/g, '')),
-    )
-  }, [conversations, query])
+  /* El filtrado ahora lo hace el backend (?q=, busca en TODAS las
+     conversaciones, no solo en las páginas ya cargadas). */
+  const visible = conversations ?? []
 
   /* Atajos: "/" busca, j/k recorren la lista sin sacar las manos del teclado. */
   React.useEffect(() => {
@@ -159,7 +155,7 @@ export function InboxLayout() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => e.key === 'Escape' && setQuery('')}
-              placeholder="Buscar entre las cargadas"
+              placeholder="Buscar por nombre o teléfono"
               aria-label="Buscar conversaciones"
               className="h-8 w-full rounded-md border border-border bg-background pr-8 pl-8 text-[13px] outline-none placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
             />
@@ -248,7 +244,7 @@ export function InboxLayout() {
 
           {visible.length > 0 && (
             <div className="flex flex-col items-center gap-2 px-4 py-3">
-              {hasNextPage && !query && (
+              {hasNextPage && (
                 <Button
                   variant="outline"
                   size="sm"

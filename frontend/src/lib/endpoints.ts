@@ -13,6 +13,7 @@ import type {
   MemberResponse,
   MessageResponse,
   StatsResponse,
+  TeamMemberResponse,
   TeamResponse,
   TokenResponse,
 } from '@/types/api'
@@ -72,6 +73,10 @@ export function createTeam(accountId: string, name: string) {
   })
 }
 
+export function getTeamMembers(accountId: string, teamId: string) {
+  return apiFetch<TeamMemberResponse[]>(`/accounts/${accountId}/teams/${teamId}/members`)
+}
+
 export function addTeamMember(accountId: string, teamId: string, userId: string) {
   return apiFetch<void>(`/accounts/${accountId}/teams/${teamId}/members`, {
     method: 'POST',
@@ -92,10 +97,11 @@ export function removeTeamMember(accountId: string, teamId: string, userId: stri
 export function getConversations(
   accountId: string,
   status?: ConversationStatusValue,
-  { limit = PAGE_SIZE, offset = 0 }: { limit?: number; offset?: number } = {},
+  { limit = PAGE_SIZE, offset = 0, q }: { limit?: number; offset?: number; q?: string } = {},
 ) {
   const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   if (status) qs.set('status_filter', status)
+  if (q) qs.set('q', q)
   return apiFetch<ConversationResponse[]>(`/accounts/${accountId}/conversations?${qs}`)
 }
 
@@ -145,9 +151,10 @@ export function sendMessage(accountId: string, conversationId: string, text: str
 
 export function getContacts(
   accountId: string,
-  { limit = PAGE_SIZE, offset = 0 }: { limit?: number; offset?: number } = {},
+  { limit = PAGE_SIZE, offset = 0, q }: { limit?: number; offset?: number; q?: string } = {},
 ) {
   const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+  if (q) qs.set('q', q)
   return apiFetch<ContactResponse[]>(`/accounts/${accountId}/contacts?${qs}`)
 }
 

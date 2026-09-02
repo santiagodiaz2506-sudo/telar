@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Info, Loader2, Plus, Trash2, UserPlus, Users, UsersRound } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Plus, Trash2, UserPlus, Users, UsersRound } from 'lucide-react'
 import * as React from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -36,8 +36,10 @@ import {
   addTeamMember,
   createTeam,
   getMembers,
+  getTeamMembers,
   getTeams,
   removeMember,
+  removeTeamMember,
 } from '@/lib/endpoints'
 import { ASSIGNABLE_ROLES, isAdmin, isElevated, ROLE_HINT, ROLE_LABEL } from '@/lib/roles'
 import type { AccountRoleValue } from '@/types/api'
@@ -387,42 +389,16 @@ function TeamsTab({ accountId, role }: { accountId: string; role: string | null 
       {teams && teams.length > 0 && (
         <ul className="flex flex-col gap-2">
           {teams.map((team) => (
-            <li
+            <TeamRow
               key={team.id}
-              className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3.5"
-            >
-              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-muted-foreground">
-                <UsersRound className="size-4" />
-              </span>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">{team.name}</span>
-              {canAssign && (
-                <Button
-                  variant="outline"
-                  size="xs"
-                  onClick={() => setAddingTo({ id: team.id, name: team.name })}
-                >
-                  <UserPlus />
-                  Sumar gente
-                </Button>
-              )}
-            </li>
+              accountId={accountId}
+              team={team}
+              canAssign={canAssign}
+              onAddClick={() => setAddingTo({ id: team.id, name: team.name })}
+            />
           ))}
         </ul>
       )}
-
-      {/* Honestidad sobre lo que el backend todavía no permite */}
-      <div className="flex items-start gap-2.5 rounded-lg border border-dashed border-border px-3.5 py-3">
-        <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 text-[13px] text-muted-foreground">
-          <p>
-            La API todavía no expone quiénes integran cada equipo ni permite encolar una
-            conversación a un equipo, así que acá no se puede mostrar la nómina.
-          </p>
-          <p className="mt-1.5 font-mono text-[11.5px] break-all opacity-80">
-            Falta GET /accounts/&#123;id&#125;/teams/&#123;team_id&#125;/members
-          </p>
-        </div>
-      </div>
 
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent>
@@ -471,6 +447,98 @@ function TeamsTab({ accountId, role }: { accountId: string; role: string | null 
   )
 }
 
+function TeamRow({
+  accountId,
+  team,
+  canAssign,
+  onAddClick,
+}: {
+  accountId: string
+  team: { id: string; name: string }
+  canAssign: boolean
+  onAddClick: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [expanded, setExpanded] = React.useState(false)
+
+  const { data: teamMembers, isLoading } = useQuery({
+    queryKey: ['team-members', accountId, team.id],
+    queryFn: () => getTeamMembers(accountId, team.id),
+    enabled: expanded,
+  })
+
+  const remove = useMutation({
+    mutationFn: (userId: string) => removeTeamMember(accountId, team.id, userId),
+    onSuccess: () => {
+      toast.success('Sacado del equipo')
+      queryClient.invalidateQueries({ queryKey: ['team-members', accountId, team.id] })
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo sacar del equipo'),
+  })
+
+  return (
+    <li className="rounded-xl border border-border bg-surface">
+      <div className="flex items-center gap-3 px-4 py-3.5">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-muted-foreground">
+          <UsersRound className="size-4" />
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{team.name}</span>
+        <Button variant="ghost" size="xs" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? <ChevronUp /> : <ChevronDown />}
+          Miembros
+        </Button>
+        {canAssign && (
+          <Button variant="outline" size="xs" onClick={onAddClick}>
+            <UserPlus />
+            Sumar gente
+          </Button>
+        )}
+      </div>
+
+      {expanded && (
+        <div className="border-t border-border px-4 py-3.5">
+          {isLoading && (
+            <div className="space-y-2">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 rounded-lg" />
+              ))}
+            </div>
+          )}
+
+          {teamMembers?.length === 0 && (
+            <p className="text-[13px] text-muted-foreground">Todavía nadie en este equipo.</p>
+          )}
+
+          {teamMembers && teamMembers.length > 0 && (
+            <ul className="flex flex-col gap-2.5">
+              {teamMembers.map((m) => (
+                <li key={m.user_id} className="flex items-center gap-2.5">
+                  <ContactAvatar seed={m.user_id} name={m.name} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-medium">{m.name}</p>
+                    <p className="truncate text-xs text-muted-foreground">{m.email}</p>
+                  </div>
+                  {canAssign && (
+                    <Button
+                      variant="destructive-ghost"
+                      size="xs"
+                      disabled={remove.isPending}
+                      title="Sacar del equipo"
+                      onClick={() => remove.mutate(m.user_id)}
+                    >
+                      <Trash2 />
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
 function AddToTeamDialog({
   accountId,
   team,
@@ -480,6 +548,7 @@ function AddToTeamDialog({
   team: { id: string; name: string } | null
   onOpenChange: (open: boolean) => void
 }) {
+  const queryClient = useQueryClient()
   const [userId, setUserId] = React.useState('')
 
   const { data: members } = useQuery({
@@ -488,10 +557,22 @@ function AddToTeamDialog({
     enabled: !!team,
   })
 
+  /* Para no ofrecer sumar a quien ya está en el equipo. */
+  const { data: teamMembers } = useQuery({
+    queryKey: ['team-members', accountId, team?.id],
+    queryFn: () => getTeamMembers(accountId, team!.id),
+    enabled: !!team,
+  })
+
+  const availableMembers = members?.filter(
+    (m) => !teamMembers?.some((tm) => tm.user_id === m.user_id),
+  )
+
   const add = useMutation({
     mutationFn: () => addTeamMember(accountId, team!.id, userId),
     onSuccess: () => {
       toast.success(`Sumado a ${team?.name}`)
+      queryClient.invalidateQueries({ queryKey: ['team-members', accountId, team?.id] })
       setUserId('')
       onOpenChange(false)
     },
@@ -523,12 +604,17 @@ function AddToTeamDialog({
               onChange={(e) => setUserId(e.target.value)}
             >
               <option value="">Elegí a alguien…</option>
-              {members?.map((m) => (
+              {availableMembers?.map((m) => (
                 <option key={m.user_id} value={m.user_id}>
                   {m.name} · {m.email}
                 </option>
               ))}
             </Select>
+            {members && members.length > 0 && availableMembers?.length === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Todos los miembros de la cuenta ya están en este equipo.
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>

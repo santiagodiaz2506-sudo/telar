@@ -17,14 +17,17 @@ import {
 } from '@/components/ui/table'
 import { getContacts, getConversations, PAGE_SIZE } from '@/lib/endpoints'
 import { formatPhone } from '@/lib/format'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 
 export function ContactsPage() {
   const { accountId } = useParams<{ accountId: string }>()
   const [query, setQuery] = React.useState('')
+  const debouncedQuery = useDebouncedValue(query.trim(), 300)
 
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['contacts', accountId],
-    queryFn: ({ pageParam }) => getContacts(accountId!, { offset: pageParam }),
+    queryKey: ['contacts', accountId, debouncedQuery],
+    queryFn: ({ pageParam }) =>
+      getContacts(accountId!, { offset: pageParam, q: debouncedQuery || undefined }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) =>
       (lastPage?.length ?? 0) < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
@@ -46,18 +49,10 @@ export function ContactsPage() {
     return map
   }, [conversations])
 
-  const visible = React.useMemo(() => {
-    if (!contacts) return []
-    const q = query.trim().toLowerCase()
-    if (!q) return contacts
-    return contacts.filter(
-      (c) =>
-        c.name?.toLowerCase().includes(q) ||
-        c.phone?.replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
-        c.email?.toLowerCase().includes(q) ||
-        c.external_id.includes(q),
-    )
-  }, [contacts, query])
+  /* El filtrado ahora lo hace el backend (?q=: nombre, teléfono o email, en
+     TODOS los contactos, no solo en las páginas ya cargadas). El wa_id no lo
+     busca la API todavía, así que ese campo queda fuera de la búsqueda. */
+  const visible = contacts ?? []
 
   if (!accountId) return null
 
@@ -77,7 +72,7 @@ export function ContactsPage() {
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar entre los cargados"
+            placeholder="Buscar por nombre, teléfono o email"
             aria-label="Buscar contactos"
             className="h-8 w-full rounded-md border border-border bg-background pr-8 pl-8 text-[13px] outline-none placeholder:text-muted-foreground/70 focus-visible:border-primary focus-visible:ring-[3px] focus-visible:ring-primary/20 [&::-webkit-search-cancel-button]:hidden"
           />
@@ -108,7 +103,7 @@ export function ContactsPage() {
             title={query ? 'Ningún contacto coincide' : 'Todavía no hay contactos'}
             description={
               query
-                ? 'La búsqueda es sobre los contactos ya cargados. Cargá más y volvé a intentar.'
+                ? 'Probá con otro nombre, teléfono o email.'
                 : 'Cada persona que le escriba a tu número aparece acá automáticamente.'
             }
             action={

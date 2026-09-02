@@ -37,6 +37,12 @@ export interface TeamResponse {
   name: string
 }
 
+export interface TeamMemberResponse {
+  user_id: string
+  email: string
+  name: string
+}
+
 export type ConversationStatusValue = 'bot' | 'pending' | 'open' | 'resolved'
 
 export interface ConversationResponse {
