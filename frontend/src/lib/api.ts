@@ -29,7 +29,12 @@ export class ApiError extends Error {
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken()
   const headers = new Headers(init.headers)
-  headers.set('Content-Type', 'application/json')
+  // FormData (subida de archivos) necesita que el browser ponga su propio
+  // Content-Type con el boundary del multipart -- si lo pisamos acá, el
+  // backend no puede parsear el body.
+  if (!(init.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json')
+  }
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
   }

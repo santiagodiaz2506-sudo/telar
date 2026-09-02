@@ -14,7 +14,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Braces, Loader2, Plus, Save, X } from 'lucide-react'
+import { Braces, History, Loader2, Plus, RotateCcw, Save, X } from 'lucide-react'
 import * as React from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -22,9 +22,35 @@ import { toast } from 'sonner'
 import { AgentNode } from '@/components/flow/AgentNode'
 import { EndpointNode } from '@/components/flow/EndpointNode'
 import { NodeEditPanel } from '@/components/flow/NodeEditPanel'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { ApiError } from '@/lib/api'
-import { getAvailableTools, getBot, saveBot } from '@/lib/endpoints'
+import { useAuth } from '@/lib/auth'
+import {
+  activateBotVersion,
+  getAvailableTools,
+  getBot,
+  getBotVersions,
+  getMembers,
+  saveBot,
+} from '@/lib/endpoints'
 import {
   DEFAULT_GRAPH,
   flowToGraph,
@@ -32,6 +58,8 @@ import {
   newAgentNodeId,
   type AgentNodeData,
 } from '@/lib/flowGraph'
+import { shortTimestamp } from '@/lib/format'
+import { isAdmin } from '@/lib/roles'
 import { useTheme } from '@/lib/theme'
 
 const nodeTypes = { agent: AgentNode, endpoint: EndpointNode }
@@ -39,12 +67,16 @@ const nodeTypes = { agent: AgentNode, endpoint: EndpointNode }
 function BotFlowEditor({ accountId }: { accountId: string }) {
   const queryClient = useQueryClient()
   const { resolved } = useTheme()
+  const { roleForAccount } = useAuth()
+  const canManageVersions = isAdmin(roleForAccount(accountId))
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [selectedNodeId, setSelectedNodeId] = React.useState<string | null>(null)
   const [showJson, setShowJson] = React.useState(false)
+  const [versionsOpen, setVersionsOpen] = React.useState(false)
   const [hydrated, setHydrated] = React.useState(false)
   const [dirty, setDirty] = React.useState(false)
+  const [notes, setNotes] = React.useState('')
 
   const { data: bot } = useQuery({ queryKey: ['bot', accountId], queryFn: () => getBot(accountId) })
   const { data: availableTools } = useQuery({
@@ -61,18 +93,39 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
   }, [bot, hydrated, setNodes, setEdges])
 
   const saveMutation = useMutation({
-    mutationFn: () => saveBot(accountId, bot?.name ?? 'Bot principal', flowToGraph(nodes, edges)),
+    mutationFn: () =>
+      saveBot(accountId, bot?.name ?? 'Bot principal', flowToGraph(nodes, edges), notes),
     onSuccess: () => {
       setDirty(false)
-      toast.success('Flujo guardado', {
-        description: 'Reiniciá la API para que los cambios tomen efecto.',
-      })
+      setNotes('')
+      toast.success('Flujo guardado', { description: 'Los cambios ya están activos.' })
       queryClient.invalidateQueries({ queryKey: ['bot', accountId] })
+      queryClient.invalidateQueries({ queryKey: ['bot-versions', accountId] })
     },
     onError: (e) => {
       toast.error(e instanceof ApiError ? e.message : 'No se pudo guardar el flujo')
     },
   })
+
+  /**
+   * Restaurar una versión no toca `hydrated` (ya está en true): si
+   * dependiéramos de ese efecto para releer `bot`, la primera actualización
+   * de la caché (todavía con los datos viejos, antes de que el refetch
+   * resuelva) lo dejaría trabado. Más simple: pedir el bot de nuevo acá
+   * mismo y pintar ese grafo directo en el lienzo.
+   */
+  async function handleVersionActivated() {
+    const fresh = await getBot(accountId)
+    if (fresh) {
+      const { nodes: n, edges: e } = graphToFlow(fresh.graph)
+      setNodes(n)
+      setEdges(e)
+    }
+    setDirty(false)
+    setNotes('')
+    queryClient.setQueryData(['bot', accountId], fresh)
+    queryClient.invalidateQueries({ queryKey: ['bot-versions', accountId] })
+  }
 
   const onConnect = React.useCallback(
     (connection: Connection) => {
@@ -145,6 +198,15 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
         )}
 
         <div className="ml-auto flex items-center gap-2">
+          {dirty && (
+            <Input
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Notas de esta versión (opcional)"
+              aria-label="Notas de esta versión"
+              className="h-8 w-56 text-[13px]"
+            />
+          )}
           <Button variant="outline" size="sm" onClick={handleAddNode}>
             <Plus />
             Agregar nodo
@@ -157,6 +219,10 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
           >
             <Braces />
             JSON
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => setVersionsOpen(true)}>
+            <History />
+            Versiones
           </Button>
           <Button
             size="sm"
@@ -236,7 +302,134 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
           />
         )}
       </div>
+
+      <BotVersionsDialog
+        accountId={accountId}
+        open={versionsOpen}
+        onOpenChange={setVersionsOpen}
+        canActivate={canManageVersions}
+        onActivated={handleVersionActivated}
+      />
     </div>
+  )
+}
+
+function BotVersionsDialog({
+  accountId,
+  open,
+  onOpenChange,
+  canActivate,
+  onActivated,
+}: {
+  accountId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  canActivate: boolean
+  onActivated: () => void
+}) {
+  const { data: versions, isLoading } = useQuery({
+    queryKey: ['bot-versions', accountId],
+    queryFn: () => getBotVersions(accountId),
+    enabled: open,
+  })
+
+  /* Solo para mostrar un nombre en vez del uuid de created_by. */
+  const { data: members } = useQuery({
+    queryKey: ['members', accountId],
+    queryFn: () => getMembers(accountId),
+    enabled: open,
+    staleTime: 60_000,
+  })
+
+  const activate = useMutation({
+    mutationFn: (versionId: string) => activateBotVersion(accountId, versionId),
+    onSuccess: (version) => {
+      toast.success(`Restaurada la versión ${version.version}`)
+      onActivated()
+    },
+    onError: (e) =>
+      toast.error(e instanceof ApiError ? e.message : 'No se pudo restaurar esta versión'),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Versiones del bot</DialogTitle>
+          <DialogDescription>
+            Cada "Guardar" queda como una versión nueva. Restaurar una vieja la vuelve a activar
+            tal cual estaba, sin perder las demás.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading && (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 rounded-lg" />
+            ))}
+          </div>
+        )}
+
+        {versions?.length === 0 && (
+          <p className="text-[13px] text-muted-foreground">Todavía no hay versiones guardadas.</p>
+        )}
+
+        {versions && versions.length > 0 && (
+          <div className="max-h-[360px] overflow-y-auto rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead className="pl-4">Versión</TableHead>
+                  <TableHead>Notas</TableHead>
+                  <TableHead>Creado por</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead className="w-px pr-4" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {versions.map((v) => {
+                  const author = members?.find((m) => m.user_id === v.created_by)
+                  return (
+                    <TableRow key={v.id}>
+                      <TableCell className="pl-4 font-medium whitespace-nowrap">
+                        v{v.version}
+                        {v.is_active && (
+                          <Badge variant="secondary" className="ml-2">
+                            Activa
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate text-muted-foreground">
+                        {v.notes || '—'}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {author?.name ?? (v.created_by ? 'Ya no está en la cuenta' : '—')}
+                      </TableCell>
+                      <TableCell className="tabular text-muted-foreground">
+                        {shortTimestamp(v.created_at)}
+                      </TableCell>
+                      <TableCell className="pr-4 text-right">
+                        {!v.is_active && canActivate && (
+                          <Button
+                            variant="outline"
+                            size="xs"
+                            disabled={activate.isPending}
+                            onClick={() => activate.mutate(v.id)}
+                          >
+                            <RotateCcw />
+                            Restaurar
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -1,5 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCheck, ChevronUp, Hand, Loader2, Lock, MessageSquareDashed, Undo2 } from 'lucide-react'
+import {
+  CheckCheck,
+  ChevronUp,
+  Clock,
+  FileText,
+  Hand,
+  Loader2,
+  Lock,
+  MessageSquareDashed,
+  Undo2,
+} from 'lucide-react'
 import * as React from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -9,6 +19,7 @@ import { AssigneePicker } from '@/components/inbox/AssigneePicker'
 import { Composer } from '@/components/inbox/Composer'
 import { ContactPanel } from '@/components/inbox/ContactPanel'
 import { DaySeparator, MessageBubble } from '@/components/inbox/MessageBubble'
+import { SendTemplateDialog } from '@/components/inbox/SendTemplateDialog'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ContactAvatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
@@ -40,6 +51,7 @@ export function ThreadPage() {
   const { user, roleForAccount } = useAuth()
   const queryClient = useQueryClient()
   const [busy, setBusy] = React.useState(false)
+  const [templateDialogOpen, setTemplateDialogOpen] = React.useState(false)
   const bottomRef = React.useRef<HTMLDivElement>(null)
 
   const [olderMessages, setOlderMessages] = React.useState<MessageResponse[]>([])
@@ -154,6 +166,11 @@ export function ThreadPage() {
     : null
 
   const sw = serviceWindow(conv.last_contact_message_at)
+
+  /* El backend solo exige ser dueño de la conversación (o rol elevado)
+     cuando ya está 'open'; en 'bot'/'pending'/'resolved' cualquiera de la
+     cuenta puede reabrir con una plantilla. */
+  const canSendTemplate = conv.status !== 'open' || isMine || canOverride
 
   async function handleSend(text: string) {
     try {
@@ -291,6 +308,22 @@ export function ThreadPage() {
           <div ref={bottomRef} />
         </div>
 
+        {!sw.open && canSendTemplate && (
+          <div className="flex items-center gap-3 border-t border-border bg-surface px-4 py-2.5">
+            <Clock className="size-4 shrink-0 text-status-pending" />
+            <p className="flex-1 text-[12.5px] text-muted-foreground">
+              {sw.never
+                ? 'Este contacto todavía no escribió: no hay ventana de servicio para abrir.'
+                : 'Ventana de 24 horas cerrada.'}{' '}
+              Para reabrirla hace falta una plantilla aprobada por Meta.
+            </p>
+            <Button variant="outline" size="xs" onClick={() => setTemplateDialogOpen(true)}>
+              <FileText />
+              Enviar plantilla
+            </Button>
+          </div>
+        )}
+
         {canWrite ? (
           <Composer onSend={handleSend} contactName={contactName} window={sw} />
         ) : (
@@ -304,6 +337,14 @@ export function ThreadPage() {
           />
         )}
       </div>
+
+      <SendTemplateDialog
+        accountId={accountId}
+        conversationId={conversationId}
+        open={templateDialogOpen}
+        onOpenChange={setTemplateDialogOpen}
+        onSent={invalidate}
+      />
 
       <ContactPanel
         conversation={conv}

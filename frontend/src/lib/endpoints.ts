@@ -4,17 +4,25 @@ import type {
   AvailableToolResponse,
   BotGraph,
   BotResponse,
+  BotVersionResponse,
   ConversationDetailResponse,
   ConversationResponse,
   ConversationStatusResponse,
   ConversationStatusValue,
   ContactResponse,
+  IngestResponse,
+  InboxResponse,
+  KnowledgeBaseResponse,
   MeResponse,
   MemberResponse,
   MessageResponse,
   StatsResponse,
   TeamMemberResponse,
   TeamResponse,
+  TemplateResponse,
+  ToolAdminResponse,
+  ToolKind,
+  ToolResponse,
   TokenResponse,
 } from '@/types/api'
 
@@ -162,6 +170,22 @@ export function getStats(accountId: string) {
   return apiFetch<StatsResponse>(`/accounts/${accountId}/stats`)
 }
 
+export function getTemplates(accountId: string) {
+  return apiFetch<TemplateResponse[]>(`/accounts/${accountId}/templates`)
+}
+
+export function sendTemplateMessage(
+  accountId: string,
+  conversationId: string,
+  templateId: string,
+  params: Record<string, string> = {},
+) {
+  return apiFetch<MessageResponse>(
+    `/accounts/${accountId}/conversations/${conversationId}/messages/template`,
+    { method: 'POST', body: JSON.stringify({ template_id: templateId, params }) },
+  )
+}
+
 // --------------------------------------------------------------------------
 // Bot
 // --------------------------------------------------------------------------
@@ -170,13 +194,147 @@ export function getBot(accountId: string) {
   return apiFetch<BotResponse | null>(`/accounts/${accountId}/bot`)
 }
 
-export function saveBot(accountId: string, name: string, graph: BotGraph) {
+export function saveBot(accountId: string, name: string, graph: BotGraph, notes?: string) {
   return apiFetch<BotResponse>(`/accounts/${accountId}/bot`, {
     method: 'PUT',
-    body: JSON.stringify({ name, graph }),
+    body: JSON.stringify({ name, graph, notes: notes?.trim() || undefined }),
   })
+}
+
+export function getBotVersions(accountId: string) {
+  return apiFetch<BotVersionResponse[]>(`/accounts/${accountId}/bot/versions`)
+}
+
+export function activateBotVersion(accountId: string, versionId: string) {
+  return apiFetch<BotVersionResponse>(
+    `/accounts/${accountId}/bot/versions/${versionId}/activate`,
+    { method: 'POST' },
+  )
 }
 
 export function getAvailableTools(accountId: string) {
   return apiFetch<AvailableToolResponse[]>(`/accounts/${accountId}/bot/available-tools`)
+}
+
+// --------------------------------------------------------------------------
+// Inboxes (números de WhatsApp)
+// --------------------------------------------------------------------------
+
+export function getInboxes(accountId: string) {
+  return apiFetch<InboxResponse[]>(`/accounts/${accountId}/inboxes`)
+}
+
+export function createInbox(
+  accountId: string,
+  body: {
+    name: string
+    phone_number_id: string
+    waba_id?: string
+    access_token: string
+    default_team_id?: string
+  },
+) {
+  return apiFetch<InboxResponse>(`/accounts/${accountId}/inboxes`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateInbox(
+  accountId: string,
+  inboxId: string,
+  body: { name: string; default_team_id: string | null },
+) {
+  return apiFetch<InboxResponse>(`/accounts/${accountId}/inboxes/${inboxId}`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function rotateInboxCredentials(
+  accountId: string,
+  inboxId: string,
+  body: { phone_number_id: string; waba_id?: string; access_token: string },
+) {
+  return apiFetch<InboxResponse>(`/accounts/${accountId}/inboxes/${inboxId}/rotate-credentials`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+// --------------------------------------------------------------------------
+// Tools configurables (http/sql)
+// --------------------------------------------------------------------------
+
+export function getTools(accountId: string) {
+  return apiFetch<ToolAdminResponse[]>(`/accounts/${accountId}/tools`)
+}
+
+export function createTool(
+  accountId: string,
+  body: {
+    name: string
+    description: string
+    kind: ToolKind
+    config: Record<string, unknown>
+    schema?: Record<string, unknown>
+    secret?: Record<string, unknown> | null
+  },
+) {
+  return apiFetch<ToolResponse>(`/accounts/${accountId}/tools`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateTool(
+  accountId: string,
+  toolId: string,
+  body: {
+    name: string
+    description: string
+    config: Record<string, unknown>
+    schema?: Record<string, unknown>
+    enabled: boolean
+    secret?: Record<string, unknown> | null
+  },
+) {
+  return apiFetch<ToolAdminResponse>(`/accounts/${accountId}/tools/${toolId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteTool(accountId: string, toolId: string) {
+  return apiFetch<void>(`/accounts/${accountId}/tools/${toolId}`, { method: 'DELETE' })
+}
+
+// --------------------------------------------------------------------------
+// Bases de conocimiento
+// --------------------------------------------------------------------------
+
+export function getKnowledgeBases(accountId: string) {
+  return apiFetch<KnowledgeBaseResponse[]>(`/accounts/${accountId}/knowledge-bases`)
+}
+
+export function createKnowledgeBase(accountId: string, name: string) {
+  return apiFetch<KnowledgeBaseResponse>(`/accounts/${accountId}/knowledge-bases`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function deleteKnowledgeBase(accountId: string, knowledgeBaseId: string) {
+  return apiFetch<void>(`/accounts/${accountId}/knowledge-bases/${knowledgeBaseId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function ingestDocument(accountId: string, knowledgeBaseId: string, file: File) {
+  const form = new FormData()
+  form.append('file', file)
+  return apiFetch<IngestResponse>(
+    `/accounts/${accountId}/knowledge-bases/${knowledgeBaseId}/ingest`,
+    { method: 'POST', body: form },
+  )
 }

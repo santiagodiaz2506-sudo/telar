@@ -49,20 +49,9 @@ export function Composer({
   return (
     <div className="border-t border-border bg-surface px-4 py-3">
       {/* La ventana de 24h se avisa antes de escribir, no después de que
-          Meta rechace el envío. */}
-      {!sw.open && (
-        <div className="mb-2.5 flex items-start gap-2 rounded-lg bg-status-pending-soft px-3 py-2.5 text-[13px] text-status-pending">
-          <Clock className="mt-0.5 size-4 shrink-0" />
-          <p>
-            {sw.never
-              ? 'Este contacto todavía no escribió, así que no hay ventana de servicio abierta.'
-              : 'Pasaron más de 24 horas desde el último mensaje del contacto.'}{' '}
-            Meta solo acepta plantillas aprobadas fuera de la ventana, y Telar todavía no las
-            soporta.
-          </p>
-        </div>
-      )}
-
+          Meta rechace el envío. El aviso completo (con el botón para mandar
+          una plantilla) vive en ThreadPage, arriba de este composer, porque
+          también aplica cuando la conversación está bloqueada. */}
       {sw.open && sw.warning && (
         <p className="mb-2 flex items-center gap-1.5 px-1 text-[12px] text-status-pending">
           <Clock className="size-3.5" />

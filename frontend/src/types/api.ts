@@ -121,6 +121,65 @@ export interface AvailableToolResponse {
   description: string
 }
 
+export interface TemplateComponent {
+  type: string
+  format?: string
+  text?: string
+  buttons?: unknown[]
+}
+
+export interface TemplateResponse {
+  id: string
+  name: string
+  language: string
+  components: TemplateComponent[]
+}
+
+export interface BotVersionResponse {
+  id: string
+  version: number
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  is_active: boolean
+}
+
+export interface InboxResponse {
+  id: string
+  name: string
+  channel: string
+  phone_number_id: string | null
+  waba_id: string | null
+  default_team_id: string | null
+  created_at: string
+}
+
+export type ToolKind = 'http' | 'sql'
+
+export interface ToolResponse {
+  id: string
+  name: string
+  description: string
+  kind: ToolKind
+  config: Record<string, unknown>
+  schema: Record<string, unknown>
+}
+
+export interface ToolAdminResponse extends ToolResponse {
+  enabled: boolean
+}
+
+export interface KnowledgeBaseResponse {
+  id: string
+  name: string
+  embedding_model: string
+  dimensions: number
+}
+
+export interface IngestResponse {
+  chunks_inserted: number
+}
+
 export interface StatsResponse {
   bot: number
   pending: number
