@@ -24,6 +24,7 @@ _DEFAULT_GRAPH_JSON = {
 
 def build_graph(
     model_spec: str | None = None,
+    model_kwargs: dict | None = None,
     checkpointer=None,
     extra_tools: list | None = None,
     graph_json: dict | None = None,
@@ -33,5 +34,6 @@ def build_graph(
         graph_json or _DEFAULT_GRAPH_JSON,
         available_tools=tools,
         model_spec=model_spec,
+        model_kwargs=model_kwargs,
         checkpointer=checkpointer,
     )

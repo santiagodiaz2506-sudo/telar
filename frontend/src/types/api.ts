@@ -30,6 +30,8 @@ export interface MemberResponse {
   email: string
   name: string
   role: string
+  /** Presente solo la vez que se crea el usuario de una: hay que mostrarla y no vuelve a llegar. */
+  temporary_password?: string | null
 }
 
 export interface TeamResponse {
@@ -167,6 +169,21 @@ export interface ToolResponse {
 
 export interface ToolAdminResponse extends ToolResponse {
   enabled: boolean
+}
+
+export type LlmProviderKind = 'openai' | 'anthropic' | 'openrouter' | 'ollama'
+
+export interface LlmProviderResponse {
+  id: string
+  name: string
+  provider: LlmProviderKind
+  model: string
+  base_url: string | null
+  is_active: boolean
+}
+
+export interface DiscoverModelsResponse {
+  models: string[]
 }
 
 export interface KnowledgeBaseResponse {

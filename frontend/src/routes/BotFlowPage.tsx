@@ -21,7 +21,9 @@ import { toast } from 'sonner'
 
 import { AgentNode } from '@/components/flow/AgentNode'
 import { EndpointNode } from '@/components/flow/EndpointNode'
+import { InboxConnectionPanel } from '@/components/flow/InboxConnectionPanel'
 import { NodeEditPanel } from '@/components/flow/NodeEditPanel'
+import { TriggerNode, type TriggerNodeData } from '@/components/flow/TriggerNode'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -48,6 +50,7 @@ import {
   getAvailableTools,
   getBot,
   getBotVersions,
+  getInboxes,
   getMembers,
   saveBot,
 } from '@/lib/endpoints'
@@ -62,7 +65,7 @@ import { shortTimestamp } from '@/lib/format'
 import { isAdmin } from '@/lib/roles'
 import { useTheme } from '@/lib/theme'
 
-const nodeTypes = { agent: AgentNode, endpoint: EndpointNode }
+const nodeTypes = { agent: AgentNode, endpoint: EndpointNode, trigger: TriggerNode }
 
 function BotFlowEditor({ accountId }: { accountId: string }) {
   const queryClient = useQueryClient()
@@ -83,6 +86,10 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
     queryKey: ['available-tools', accountId],
     queryFn: () => getAvailableTools(accountId),
   })
+  const { data: inboxes } = useQuery({
+    queryKey: ['inboxes', accountId],
+    queryFn: () => getInboxes(accountId),
+  })
 
   React.useEffect(() => {
     if (hydrated || bot === undefined) return
@@ -92,18 +99,40 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
     setHydrated(true)
   }, [bot, hydrated, setNodes, setEdges])
 
+  /* El nodo de inicio no vive en el JSON del grafo (START es solo un
+     ancla de edges) -- se le inyecta la conexión real acá, sin pasar por
+     graphToFlow/flowToGraph. */
+  React.useEffect(() => {
+    if (!hydrated || inboxes === undefined) return
+    const primary = inboxes[0]
+    setNodes((current) =>
+      current.map((n) =>
+        n.type === 'trigger'
+          ? {
+              ...n,
+              data: {
+                label: 'START',
+                inboxName: primary?.name ?? null,
+                phoneNumberId: primary?.phone_number_id ?? null,
+              } satisfies TriggerNodeData,
+            }
+          : n,
+      ),
+    )
+  }, [inboxes, hydrated, setNodes])
+
   const saveMutation = useMutation({
     mutationFn: () =>
       saveBot(accountId, bot?.name ?? 'Bot principal', flowToGraph(nodes, edges), notes),
     onSuccess: () => {
       setDirty(false)
       setNotes('')
-      toast.success('Flujo guardado', { description: 'Los cambios ya están activos.' })
+      toast.success('Hilo guardado', { description: 'Los cambios ya están activos.' })
       queryClient.invalidateQueries({ queryKey: ['bot', accountId] })
       queryClient.invalidateQueries({ queryKey: ['bot-versions', accountId] })
     },
     onError: (e) => {
-      toast.error(e instanceof ApiError ? e.message : 'No se pudo guardar el flujo')
+      toast.error(e instanceof ApiError ? e.message : 'No se pudo guardar el hilo')
     },
   })
 
@@ -158,7 +187,7 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
   }
 
   function handleNodeClick(_: React.MouseEvent, node: Node) {
-    setSelectedNodeId(node.type === 'agent' ? node.id : null)
+    setSelectedNodeId(node.type === 'agent' || node.type === 'trigger' ? node.id : null)
   }
 
   function handleNodeDataChange(nodeId: string, data: AgentNodeData) {
@@ -181,7 +210,7 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {/* Barra de la pantalla: fuera del lienzo, no flotando encima */}
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-5">
-        <h1 className="text-[15px] font-semibold tracking-tight">Flujo del bot</h1>
+        <h1 className="text-[15px] font-semibold tracking-tight">Hilos conversacionales</h1>
         <span className="tabular rounded-full bg-surface-2 px-2 py-0.5 text-xs text-muted-foreground">
           {agentCount} {agentCount === 1 ? 'nodo' : 'nodos'}
         </span>
@@ -263,7 +292,8 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
           </ReactFlow>
 
           <p className="pointer-events-none absolute top-3 left-3 rounded-md border border-border bg-surface/90 px-2.5 py-1.5 text-[11px] text-muted-foreground backdrop-blur">
-            Cadena lineal: cada nodo se conecta a uno solo. Clic en un nodo para editarlo.
+            Cadena lineal: cada nodo se conecta a uno solo. El nodo de inicio es la conexión de
+            WhatsApp -- clic en cualquier nodo para editarlo.
           </p>
         </div>
 
@@ -298,6 +328,14 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
             availableTools={availableTools ?? []}
             onChange={(data) => handleNodeDataChange(selectedNode.id, data)}
             onDelete={() => handleDeleteNode(selectedNode.id)}
+            onClose={() => setSelectedNodeId(null)}
+          />
+        )}
+
+        {selectedNode?.type === 'trigger' && (
+          <InboxConnectionPanel
+            accountId={accountId}
+            inboxes={inboxes ?? []}
             onClose={() => setSelectedNodeId(null)}
           />
         )}

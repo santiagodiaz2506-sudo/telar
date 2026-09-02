@@ -20,6 +20,7 @@ from telar.db import repositories as repo
 from telar.db.pool import close_pool, get_pool
 from telar.inboxes.router import router as inboxes_router
 from telar.kb.router import router as kb_router
+from telar.llm.router import router as llm_providers_router
 from telar.worker.dispatcher import Dispatcher
 from telar.worker.pipeline import Pipeline
 
@@ -123,3 +124,4 @@ app.include_router(agent_router)
 app.include_router(inboxes_router)
 app.include_router(tools_router)
 app.include_router(kb_router)
+app.include_router(llm_providers_router)

@@ -46,6 +46,7 @@ def compile_graph(
     graph_json: dict[str, Any],
     available_tools: list[BaseTool],
     model_spec: str | None = None,
+    model_kwargs: dict[str, Any] | None = None,
     checkpointer: Any = None,
 ):
     nodes = graph_json.get("nodes", [])
@@ -87,7 +88,8 @@ def compile_graph(
         next_target = END if next_id == "END" else next_id
 
         graph.add_node(
-            node_id, _make_agent_node(node.get("system_prompt"), node_tools, model_spec)
+            node_id,
+            _make_agent_node(node.get("system_prompt"), node_tools, model_spec, model_kwargs),
         )
 
         if node_tools:
@@ -125,8 +127,13 @@ def _resolve_tools(
     return resolved
 
 
-def _make_agent_node(system_prompt: str | None, tools: list[BaseTool], model_spec: str | None):
-    model = get_model(model_spec)
+def _make_agent_node(
+    system_prompt: str | None,
+    tools: list[BaseTool],
+    model_spec: str | None,
+    model_kwargs: dict[str, Any] | None = None,
+):
+    model = get_model(model_spec, **(model_kwargs or {}))
     bound_model = model.bind_tools(tools) if tools else model
 
     async def agent(state: AgentState):

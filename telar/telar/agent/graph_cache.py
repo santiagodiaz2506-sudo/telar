@@ -19,8 +19,10 @@ from __future__ import annotations
 from uuid import UUID
 
 from telar.agent.graph import build_graph
+from telar.core import crypto
 from telar.custom_tools.loader import build_custom_tools
 from telar.db import repositories as repo
+from telar.llm.registry import resolve_model_spec
 
 _graphs: dict[str, object] = {}
 
@@ -30,10 +32,34 @@ async def get_or_build(account_id: UUID, checkpointer) -> object:
     if key not in _graphs:
         extra_tools = await build_custom_tools(account_id)
         graph_json = await repo.get_active_bot_graph(account_id)
+        model_spec, model_kwargs = await _resolve_model(account_id)
         _graphs[key] = build_graph(
-            checkpointer=checkpointer, extra_tools=extra_tools, graph_json=graph_json
+            model_spec=model_spec,
+            model_kwargs=model_kwargs,
+            checkpointer=checkpointer,
+            extra_tools=extra_tools,
+            graph_json=graph_json,
         )
     return _graphs[key]
+
+
+async def _resolve_model(account_id: UUID) -> tuple[str | None, dict]:
+    """Si la cuenta tiene un proveedor LLM activo, se usa ese en vez del
+    modelo global por defecto. Sin proveedor activo, el comportamiento es
+    exactamente el de antes (None -> settings().default_model)."""
+    provider = await repo.get_active_llm_provider(account_id)
+    if provider is None:
+        return None, {}
+
+    model_spec, base_url = resolve_model_spec(
+        provider["provider"], provider["model"], provider["base_url"]
+    )
+    kwargs: dict = {}
+    if base_url:
+        kwargs["base_url"] = base_url
+    if provider["api_key"]:
+        kwargs["api_key"] = crypto.decrypt(bytes(provider["api_key"]).decode())
+    return model_spec, kwargs
 
 
 def invalidate(account_id: UUID) -> None:

@@ -1,5 +1,6 @@
 import type { Edge, Node } from '@xyflow/react'
 
+import type { TriggerNodeData } from '@/components/flow/TriggerNode'
 import type { BotGraph, GraphNode } from '@/types/api'
 
 export const DEFAULT_GRAPH: BotGraph = {
@@ -21,7 +22,7 @@ export interface AgentNodeData {
 
 export interface EndpointNodeData {
   [key: string]: unknown
-  label: 'START' | 'END'
+  label: 'END'
 }
 
 /**
@@ -45,8 +46,12 @@ export function graphToFlow(graph: BotGraph): { nodes: Node[]; edges: Edge[] } {
 
   const nodes: Node[] = order.map((id, i) => {
     const position = { x: i * X_SPACING, y: ROW_Y }
-    if (id === 'START' || id === 'END') {
-      const data: EndpointNodeData = { label: id }
+    if (id === 'START') {
+      const data: TriggerNodeData = { label: 'START', inboxName: null, phoneNumberId: null }
+      return { id, type: 'trigger', position, data, draggable: false, deletable: false }
+    }
+    if (id === 'END') {
+      const data: EndpointNodeData = { label: 'END' }
       return { id, type: 'endpoint', position, data, draggable: false, deletable: false }
     }
     const graphNode = nodesById.get(id)

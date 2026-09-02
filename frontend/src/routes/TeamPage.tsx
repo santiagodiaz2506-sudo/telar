@@ -1,5 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronUp, Loader2, Plus, Trash2, UserPlus, Users, UsersRound } from 'lucide-react'
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Loader2,
+  Plus,
+  Trash2,
+  UserPlus,
+  Users,
+  UsersRound,
+} from 'lucide-react'
 import * as React from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -226,29 +237,71 @@ function AddMemberDialog({
 }) {
   const queryClient = useQueryClient()
   const [email, setEmail] = React.useState('')
+  const [name, setName] = React.useState('')
   const [role, setRole] = React.useState<AccountRoleValue>('agent')
   const [error, setError] = React.useState<string | null>(null)
+  const [created, setCreated] = React.useState<{ email: string; password: string } | null>(null)
 
   const add = useMutation({
-    mutationFn: () => addMember(accountId, email.trim(), role),
-    onSuccess: () => {
-      toast.success('Miembro sumado a la cuenta')
+    mutationFn: () => addMember(accountId, email.trim(), role, name),
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['members', accountId] })
-      setEmail('')
-      setError(null)
-      onOpenChange(false)
+      if (data.temporary_password) {
+        // Se creó un usuario nuevo de una: hay que mostrar la contraseña
+        // temporal ahora porque no se vuelve a poder ver después.
+        setCreated({ email: data.email, password: data.temporary_password })
+      } else {
+        toast.success('Miembro sumado a la cuenta')
+        reset()
+        onOpenChange(false)
+      }
     },
     onError: (e) =>
       setError(e instanceof ApiError ? e.message : 'No se pudo sumar a esta persona'),
   })
 
+  function reset() {
+    setEmail('')
+    setName('')
+    setError(null)
+    setCreated(null)
+  }
+
+  function close() {
+    reset()
+    onOpenChange(false)
+  }
+
+  if (created) {
+    return (
+      <Dialog open={open} onOpenChange={close}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Usuario creado</DialogTitle>
+            <DialogDescription>
+              {created.email} todavía no tenía cuenta, así que se creó con esta contraseña
+              temporal. Compartila por un canal seguro -- no se vuelve a mostrar.
+            </DialogDescription>
+          </DialogHeader>
+          <TemporaryPasswordField password={created.password} />
+          <DialogFooter>
+            <Button size="sm" onClick={close}>
+              Listo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Sumar miembro</DialogTitle>
           <DialogDescription>
-            Todavía no hay invitación por correo: la persona ya tiene que existir como usuario.
+            Si la persona ya tiene cuenta en Telar, alcanza con el correo. Si no, completá el
+            nombre y se le crea una cuenta nueva.
           </DialogDescription>
         </DialogHeader>
 
@@ -275,6 +328,19 @@ function AddMemberDialog({
           </div>
 
           <div className="flex flex-col gap-1.5">
+            <Label htmlFor="member-name">Nombre completo</Label>
+            <Input
+              id="member-name"
+              placeholder="Nombre Apellido"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Solo hace falta si la persona todavía no tiene cuenta en Telar.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor="member-role">Rol</Label>
             <Select
               id="member-role"
@@ -296,14 +362,11 @@ function AddMemberDialog({
               className="rounded-md bg-destructive-soft px-3 py-2.5 text-[13px] text-destructive"
             >
               <p>{error}</p>
-              <code className="mt-1.5 block font-mono text-[11.5px] break-all opacity-80">
-                python -m telar.auth.create_user {email || 'correo@empresa.com'} "Nombre Apellido"
-              </code>
             </div>
           )}
 
           <DialogFooter>
-            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="ghost" size="sm" onClick={close}>
               Cancelar
             </Button>
             <Button type="submit" size="sm" disabled={add.isPending || !email.trim()}>
@@ -314,6 +377,30 @@ function AddMemberDialog({
         </form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function TemporaryPasswordField({ password }: { password: string }) {
+  const [copied, setCopied] = React.useState(false)
+
+  async function copy() {
+    await navigator.clipboard.writeText(password)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1600)
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-2.5">
+      <code className="min-w-0 flex-1 font-mono text-[13px] break-all">{password}</code>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copiar contraseña temporal"
+        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {copied ? <Check className="size-4 text-primary" /> : <Copy className="size-4" />}
+      </button>
+    </div>
   )
 }
 

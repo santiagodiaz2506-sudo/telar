@@ -72,6 +72,11 @@ async def create_account(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo un superadmin puede crear cuentas")
 
     account_id = await repo.insert_account(body.name)
+    # Sin esto, la cuenta queda sin ningún administrator real -- solo
+    # accesible por el bypass de superadmin. Quien la crea queda como su
+    # primer administrador, igual que pasaría si se sumara a sí mismo desde
+    # Equipo después.
+    await repo.insert_account_membership(account_id, user["id"], AccountRole.ADMINISTRATOR.value)
     return AccountResponse(id=account_id, name=body.name)
 
 

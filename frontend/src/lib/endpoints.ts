@@ -10,9 +10,12 @@ import type {
   ConversationStatusResponse,
   ConversationStatusValue,
   ContactResponse,
+  DiscoverModelsResponse,
   IngestResponse,
   InboxResponse,
   KnowledgeBaseResponse,
+  LlmProviderKind,
+  LlmProviderResponse,
   MeResponse,
   MemberResponse,
   MessageResponse,
@@ -59,10 +62,10 @@ export function getMembers(accountId: string) {
   return apiFetch<MemberResponse[]>(`/accounts/${accountId}/members`)
 }
 
-export function addMember(accountId: string, email: string, role: string) {
+export function addMember(accountId: string, email: string, role: string, name?: string) {
   return apiFetch<MemberResponse>(`/accounts/${accountId}/members`, {
     method: 'POST',
-    body: JSON.stringify({ email, role }),
+    body: JSON.stringify(name?.trim() ? { email, role, name: name.trim() } : { email, role }),
   })
 }
 
@@ -307,6 +310,64 @@ export function updateTool(
 
 export function deleteTool(accountId: string, toolId: string) {
   return apiFetch<void>(`/accounts/${accountId}/tools/${toolId}`, { method: 'DELETE' })
+}
+
+// --------------------------------------------------------------------------
+// Proveedores LLM
+// --------------------------------------------------------------------------
+
+export function getLlmProviders(accountId: string) {
+  return apiFetch<LlmProviderResponse[]>(`/accounts/${accountId}/llm-providers`)
+}
+
+export function createLlmProvider(
+  accountId: string,
+  body: {
+    name: string
+    provider: LlmProviderKind
+    model: string
+    base_url?: string
+    api_key?: string
+  },
+) {
+  return apiFetch<LlmProviderResponse>(`/accounts/${accountId}/llm-providers`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateLlmProvider(
+  accountId: string,
+  providerId: string,
+  body: { name: string; model: string; base_url?: string; api_key?: string },
+) {
+  return apiFetch<LlmProviderResponse>(`/accounts/${accountId}/llm-providers/${providerId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteLlmProvider(accountId: string, providerId: string) {
+  return apiFetch<void>(`/accounts/${accountId}/llm-providers/${providerId}`, {
+    method: 'DELETE',
+  })
+}
+
+export function activateLlmProvider(accountId: string, providerId: string) {
+  return apiFetch<LlmProviderResponse>(
+    `/accounts/${accountId}/llm-providers/${providerId}/activate`,
+    { method: 'POST' },
+  )
+}
+
+export function discoverModels(
+  accountId: string,
+  body: { provider: LlmProviderKind; base_url?: string; api_key?: string },
+) {
+  return apiFetch<DiscoverModelsResponse>(`/accounts/${accountId}/llm-providers/discover-models`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 // --------------------------------------------------------------------------
