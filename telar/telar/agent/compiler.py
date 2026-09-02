@@ -6,9 +6,15 @@ una sola interfaz.
 
 Formato del JSON (v0, sin ramas condicionales):
     {
-      "nodes": [{"id": "...", "type": "agent", "system_prompt": "...", "tools": [...] | null}],
+      "nodes": [{"id": "...", "type": "agent", "system_prompt": "...", "tools": [...] | null,
+                 "memory_window": 20 | null}],
       "edges": [{"from": "START", "to": "..."}, {"from": "...", "to": "END"}]
     }
+
+memory_window es opcional (default null = sin límite, todo el historial que
+guarde el checkpointer de la conversación). Si se pone un número, el nodo
+solo ve los últimos N mensajes del hilo al construir el prompt -- no borra
+nada de lo guardado, solo acorta lo que se manda al modelo en ese turno.
 
 Cada nodo "agent" hace su propio loop de tool-calling (como ya hacía el
 grafo escrito a mano), y al terminar (sin más tool_calls) pasa al
@@ -89,7 +95,13 @@ def compile_graph(
 
         graph.add_node(
             node_id,
-            _make_agent_node(node.get("system_prompt"), node_tools, model_spec, model_kwargs),
+            _make_agent_node(
+                node.get("system_prompt"),
+                node_tools,
+                model_spec,
+                model_kwargs,
+                memory_window=node.get("memory_window"),
+            ),
         )
 
         if node_tools:
@@ -132,13 +144,20 @@ def _make_agent_node(
     tools: list[BaseTool],
     model_spec: str | None,
     model_kwargs: dict[str, Any] | None = None,
+    memory_window: int | None = None,
 ):
     model = get_model(model_spec, **(model_kwargs or {}))
     bound_model = model.bind_tools(tools) if tools else model
 
     async def agent(state: AgentState):
         prompt = system_prompt or state["system_prompt"]
-        messages = [SystemMessage(content=prompt), *state["messages"]]
+        history = state["messages"]
+        # memory_window acorta lo que ve el modelo, no lo que guarda el
+        # checkpointer -- restaurar el nodo a "sin límite" recupera el
+        # historial completo sin perder nada de lo ya conversado.
+        if memory_window is not None and memory_window >= 0:
+            history = history[-memory_window:] if memory_window > 0 else []
+        messages = [SystemMessage(content=prompt), *history]
         return {"messages": [await bound_model.ainvoke(messages)]}
 
     return agent

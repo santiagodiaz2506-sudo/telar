@@ -10,6 +10,8 @@ import type {
   ConversationStatusResponse,
   ConversationStatusValue,
   ContactResponse,
+  DatabaseConnectionResponse,
+  DatabaseEngine,
   DiscoverModelsResponse,
   IngestResponse,
   InboxResponse,
@@ -27,6 +29,7 @@ import type {
   ToolKind,
   ToolResponse,
   TokenResponse,
+  TestConnectionResponse,
 } from '@/types/api'
 
 /** El backend pagina con limit/offset y su default es 50. */
@@ -398,4 +401,55 @@ export function ingestDocument(accountId: string, knowledgeBaseId: string, file:
     `/accounts/${accountId}/knowledge-bases/${knowledgeBaseId}/ingest`,
     { method: 'POST', body: form },
   )
+}
+
+
+export function getDatabaseConnection(accountId: string) {
+  return apiFetch<DatabaseConnectionResponse | null>(`/accounts/${accountId}/database`)
+}
+
+export function testDatabaseConnection(
+  accountId: string,
+  body: {
+    engine: DatabaseEngine
+    host: string
+    port: number
+    database_name: string
+    username: string
+    password: string
+    use_ssl: boolean
+  },
+) {
+  return apiFetch<TestConnectionResponse>(`/accounts/${accountId}/database/test`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function saveDatabaseConnection(
+  accountId: string,
+  body: {
+    engine: DatabaseEngine
+    host: string
+    port: number
+    database_name: string
+    username: string
+    password: string
+    use_ssl: boolean
+  },
+) {
+  return apiFetch<DatabaseConnectionResponse>(`/accounts/${accountId}/database`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
+export function provisionDatabase(accountId: string) {
+  return apiFetch<DatabaseConnectionResponse>(`/accounts/${accountId}/database/provision`, {
+    method: 'POST',
+  })
+}
+
+export function deleteDatabaseConnection(accountId: string) {
+  return apiFetch<void>(`/accounts/${accountId}/database`, { method: 'DELETE' })
 }

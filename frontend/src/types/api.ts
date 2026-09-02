@@ -99,6 +99,8 @@ export interface GraphNode {
   type: 'agent'
   system_prompt?: string | null
   tools?: string[] | null
+  /** Cuántos mensajes recientes ve el modelo en este nodo. null = sin límite. */
+  memory_window?: number | null
 }
 
 export interface GraphEdge {
@@ -184,6 +186,27 @@ export interface LlmProviderResponse {
 
 export interface DiscoverModelsResponse {
   models: string[]
+}
+
+export type DatabaseEngine = 'postgres' | 'mysql'
+export type DatabaseConnectionStatus = 'disconnected' | 'connected' | 'provisioned' | 'error'
+
+export interface DatabaseConnectionResponse {
+  engine: DatabaseEngine
+  host: string
+  port: number
+  database_name: string
+  username: string
+  use_ssl: boolean
+  status: DatabaseConnectionStatus
+  last_error: string | null
+  provisioned_at: string | null
+  updated_at: string
+}
+
+export interface TestConnectionResponse {
+  ok: boolean
+  error: string | null
 }
 
 export interface KnowledgeBaseResponse {

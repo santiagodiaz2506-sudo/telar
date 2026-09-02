@@ -3,6 +3,7 @@ import * as React from 'react'
 import { useParams } from 'react-router-dom'
 
 import { EmptyState } from '@/components/EmptyState'
+import { DatabaseTab } from '@/components/settings/DatabaseTab'
 import { InboxesTab } from '@/components/settings/InboxesTab'
 import { KnowledgeBasesTab } from '@/components/settings/KnowledgeBasesTab'
 import { LlmProvidersTab } from '@/components/settings/LlmProvidersTab'
@@ -11,7 +12,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/lib/auth'
 import { isAdmin } from '@/lib/roles'
 
-type SettingsTab = 'inboxes' | 'tools' | 'knowledge-bases' | 'llm-provider'
+type SettingsTab = 'inboxes' | 'tools' | 'knowledge-bases' | 'llm-provider' | 'database'
 
 export function SettingsPage() {
   const { accountId } = useParams<{ accountId: string }>()
@@ -42,6 +43,7 @@ export function SettingsPage() {
             <TabsTrigger value="tools">Herramientas</TabsTrigger>
             <TabsTrigger value="knowledge-bases">Bases de conocimiento</TabsTrigger>
             <TabsTrigger value="llm-provider">Proveedor LLM</TabsTrigger>
+            <TabsTrigger value="database">Base de datos</TabsTrigger>
           </TabsList>
         </Tabs>
       </header>
@@ -52,6 +54,7 @@ export function SettingsPage() {
           {tab === 'tools' && <ToolsTab accountId={accountId} />}
           {tab === 'knowledge-bases' && <KnowledgeBasesTab accountId={accountId} />}
           {tab === 'llm-provider' && <LlmProvidersTab accountId={accountId} />}
+          {tab === 'database' && <DatabaseTab accountId={accountId} />}
         </div>
       </div>
     </div>

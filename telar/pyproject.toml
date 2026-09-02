@@ -28,6 +28,7 @@ dependencies = [
 [project.optional-dependencies]
 openai = ["langchain-openai>=0.2"]
 ollama = ["langchain-ollama>=0.2"]
+mysql = ["pymysql>=1.1"]  # solo si una cuenta conecta MySQL en Configuración -> Base de datos
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.7"]
 
 [build-system]

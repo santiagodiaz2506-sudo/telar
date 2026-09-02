@@ -4,7 +4,7 @@ import type { TriggerNodeData } from '@/components/flow/TriggerNode'
 import type { BotGraph, GraphNode } from '@/types/api'
 
 export const DEFAULT_GRAPH: BotGraph = {
-  nodes: [{ id: 'agente_1', type: 'agent', system_prompt: null, tools: null }],
+  nodes: [{ id: 'agente_1', type: 'agent', system_prompt: null, tools: null, memory_window: null }],
   edges: [
     { from: 'START', to: 'agente_1' },
     { from: 'agente_1', to: 'END' },
@@ -18,11 +18,14 @@ export interface AgentNodeData {
   [key: string]: unknown
   systemPrompt: string | null
   tools: string[] | null
+  /** null = sin límite (todo el historial que guarde la conversación). */
+  memoryWindow: number | null
 }
 
 export interface EndpointNodeData {
   [key: string]: unknown
   label: 'END'
+  phoneNumberId: string | null
 }
 
 /**
@@ -51,13 +54,14 @@ export function graphToFlow(graph: BotGraph): { nodes: Node[]; edges: Edge[] } {
       return { id, type: 'trigger', position, data, draggable: false, deletable: false }
     }
     if (id === 'END') {
-      const data: EndpointNodeData = { label: 'END' }
+      const data: EndpointNodeData = { label: 'END', phoneNumberId: null }
       return { id, type: 'endpoint', position, data, draggable: false, deletable: false }
     }
     const graphNode = nodesById.get(id)
     const data: AgentNodeData = {
       systemPrompt: graphNode?.system_prompt ?? null,
       tools: graphNode?.tools ?? null,
+      memoryWindow: graphNode?.memory_window ?? null,
     }
     return { id, type: 'agent', position, data }
   })
@@ -81,6 +85,7 @@ export function flowToGraph(nodes: Node[], edges: Edge[]): BotGraph {
         type: 'agent',
         system_prompt: data.systemPrompt || null,
         tools: data.tools,
+        memory_window: data.memoryWindow,
       }
     })
 

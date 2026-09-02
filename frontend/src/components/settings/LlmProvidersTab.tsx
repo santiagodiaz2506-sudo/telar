@@ -37,7 +37,7 @@ import {
 } from '@/lib/endpoints'
 import type { LlmProviderKind, LlmProviderResponse } from '@/types/api'
 
-const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
+export const PROVIDER_LABEL: Record<LlmProviderKind, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   openrouter: 'OpenRouter',
@@ -251,7 +251,7 @@ function ModelDiscoveryField({
   )
 }
 
-function CreateProviderDialog({
+export function CreateProviderDialog({
   accountId,
   open,
   onOpenChange,
@@ -397,7 +397,7 @@ function CreateProviderDialog({
   )
 }
 
-function EditProviderDialog({
+export function EditProviderDialog({
   accountId,
   provider,
   onOpenChange,

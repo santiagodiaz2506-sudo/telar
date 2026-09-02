@@ -1,13 +1,25 @@
-import { Trash2, Wrench, X } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Brain, Cpu, Trash2, Wrench, X } from 'lucide-react'
+import * as React from 'react'
+import { Link } from 'react-router-dom'
 
+import {
+  CreateProviderDialog,
+  EditProviderDialog,
+  PROVIDER_LABEL,
+} from '@/components/settings/LlmProvidersTab'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { getLlmProviders } from '@/lib/endpoints'
 import type { AgentNodeData } from '@/lib/flowGraph'
 import { cn } from '@/lib/utils'
 import type { AvailableToolResponse } from '@/types/api'
 
 interface Props {
+  accountId: string
   nodeId: string
   data: AgentNodeData
   availableTools: AvailableToolResponse[]
@@ -17,6 +29,7 @@ interface Props {
 }
 
 export function NodeEditPanel({
+  accountId,
   nodeId,
   data,
   availableTools,
@@ -26,6 +39,7 @@ export function NodeEditPanel({
 }: Props) {
   const selectedTools = data.tools // null = todas
   const label = nodeId.replace(/_\d{10,}_\d+$/, '')
+  const memoryEnabled = data.memoryWindow !== null
 
   function toggleTool(name: string) {
     if (selectedTools === null) {
@@ -62,6 +76,50 @@ export function NodeEditPanel({
             value={data.systemPrompt ?? ''}
             onChange={(e) => onChange({ ...data, systemPrompt: e.target.value })}
           />
+        </div>
+
+        <ModelSection accountId={accountId} />
+
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <Label className="gap-1.5">
+              <Brain className="size-3.5 text-muted-foreground" />
+              Memoria
+            </Label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              onClick={() =>
+                onChange({ ...data, memoryWindow: memoryEnabled ? null : 20 })
+              }
+            >
+              {memoryEnabled ? 'Usar todo el historial' : 'Limitar'}
+            </Button>
+          </div>
+          {memoryEnabled ? (
+            <div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2.5">
+              <span className="text-[12px] text-muted-foreground">Últimos</span>
+              <Input
+                type="number"
+                min={0}
+                className="h-7 w-16 text-center font-mono text-[12.5px]"
+                value={data.memoryWindow ?? 0}
+                onChange={(e) =>
+                  onChange({ ...data, memoryWindow: Math.max(0, Number(e.target.value) || 0) })
+                }
+              />
+              <span className="text-[12px] text-muted-foreground">mensajes del hilo</span>
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed border-border px-3 py-3 text-xs text-muted-foreground">
+              Este nodo ve toda la conversación guardada, sin cortar nada.
+            </p>
+          )}
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Acorta lo que se le manda al modelo en este turno -- no borra nada de lo que ya se
+            guardó de la conversación.
+          </p>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -129,5 +187,76 @@ export function NodeEditPanel({
         </Button>
       </div>
     </aside>
+  )
+}
+
+/**
+ * El modelo es un ajuste de cuenta (llm_providers.is_active), no de este
+ * nodo en particular -- todos los nodos "agent" de la cuenta lo comparten,
+ * igual que ya pasaba antes de que este atajo existiera. Esto solo evita
+ * tener que salir del lienzo para cambiarlo: reusa el mismo CRUD y el
+ * mismo "Descubrir modelos" de Configuración → Proveedor LLM.
+ */
+function ModelSection({ accountId }: { accountId: string }) {
+  const [creating, setCreating] = React.useState(false)
+  const [editing, setEditing] = React.useState(false)
+
+  const { data: providers, isLoading } = useQuery({
+    queryKey: ['llm-providers', accountId],
+    queryFn: () => getLlmProviders(accountId),
+  })
+
+  const active = providers?.find((p) => p.is_active)
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Label className="gap-1.5">
+        <Cpu className="size-3.5 text-muted-foreground" />
+        Modelo
+      </Label>
+
+      {isLoading ? (
+        <p className="text-xs text-muted-foreground">Cargando…</p>
+      ) : active ? (
+        <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="truncate text-[12.5px] font-medium">{active.name}</p>
+            <p className="truncate font-mono text-[11px] text-muted-foreground">
+              {PROVIDER_LABEL[active.provider]} · {active.model}
+            </p>
+          </div>
+          <Button type="button" variant="outline" size="xs" onClick={() => setEditing(true)}>
+            Cambiar
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border px-3 py-3">
+          <p className="text-xs text-muted-foreground">
+            Sin proveedor activo: se usa el modelo por defecto de la plataforma.
+          </p>
+          <Button type="button" variant="outline" size="xs" className="self-start" onClick={() => setCreating(true)}>
+            <Badge variant="secondary" className="mr-1">nuevo</Badge>
+            Configurar un modelo
+          </Button>
+        </div>
+      )}
+
+      <p className="text-[11px] text-muted-foreground">
+        Aplica a todos los nodos de esta cuenta.{' '}
+        <Link
+          to={`/accounts/${accountId}/settings`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          Ver todos en Configuración
+        </Link>
+      </p>
+
+      <CreateProviderDialog accountId={accountId} open={creating} onOpenChange={setCreating} />
+      <EditProviderDialog
+        accountId={accountId}
+        provider={editing ? (active ?? null) : null}
+        onOpenChange={(open) => !open && setEditing(false)}
+      />
+    </div>
   )
 }

@@ -20,7 +20,8 @@ import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { AgentNode } from '@/components/flow/AgentNode'
-import { EndpointNode } from '@/components/flow/EndpointNode'
+import { EndpointNode, type EndpointNodeData } from '@/components/flow/EndpointNode'
+import { OutputConfigPanel } from '@/components/flow/OutputConfigPanel'
 import { InboxConnectionPanel } from '@/components/flow/InboxConnectionPanel'
 import { NodeEditPanel } from '@/components/flow/NodeEditPanel'
 import { TriggerNode, type TriggerNodeData } from '@/components/flow/TriggerNode'
@@ -106,18 +107,28 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
     if (!hydrated || inboxes === undefined) return
     const primary = inboxes[0]
     setNodes((current) =>
-      current.map((n) =>
-        n.type === 'trigger'
-          ? {
-              ...n,
-              data: {
-                label: 'START',
-                inboxName: primary?.name ?? null,
-                phoneNumberId: primary?.phone_number_id ?? null,
-              } satisfies TriggerNodeData,
-            }
-          : n,
-      ),
+      current.map((n) => {
+        if (n.type === 'trigger') {
+          return {
+            ...n,
+            data: {
+              label: 'START',
+              inboxName: primary?.name ?? null,
+              phoneNumberId: primary?.phone_number_id ?? null,
+            } satisfies TriggerNodeData,
+          }
+        }
+        if (n.type === 'endpoint') {
+          return {
+            ...n,
+            data: {
+              label: 'END',
+              phoneNumberId: primary?.phone_number_id ?? null,
+            } satisfies EndpointNodeData,
+          }
+        }
+        return n
+      }),
     )
   }, [inboxes, hydrated, setNodes])
 
@@ -179,7 +190,7 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
         id,
         type: 'agent',
         position: { x: maxX + 280, y: 260 },
-        data: { systemPrompt: null, tools: null } satisfies AgentNodeData,
+        data: { systemPrompt: null, tools: null, memoryWindow: null } satisfies AgentNodeData,
       },
     ])
     setSelectedNodeId(id)
@@ -187,7 +198,11 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
   }
 
   function handleNodeClick(_: React.MouseEvent, node: Node) {
-    setSelectedNodeId(node.type === 'agent' || node.type === 'trigger' ? node.id : null)
+    setSelectedNodeId(
+      node.type === 'agent' || node.type === 'trigger' || node.type === 'endpoint'
+        ? node.id
+        : null,
+    )
   }
 
   function handleNodeDataChange(nodeId: string, data: AgentNodeData) {
@@ -323,6 +338,7 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
 
         {selectedNode?.type === 'agent' && (
           <NodeEditPanel
+            accountId={accountId}
             nodeId={selectedNode.id}
             data={selectedNode.data as AgentNodeData}
             availableTools={availableTools ?? []}
@@ -336,6 +352,14 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
           <InboxConnectionPanel
             accountId={accountId}
             inboxes={inboxes ?? []}
+            onClose={() => setSelectedNodeId(null)}
+          />
+        )}
+
+        {selectedNode?.type === 'endpoint' && (
+          <OutputConfigPanel
+            accountId={accountId}
+            inbox={inboxes?.[0]}
             onClose={() => setSelectedNodeId(null)}
           />
         )}
