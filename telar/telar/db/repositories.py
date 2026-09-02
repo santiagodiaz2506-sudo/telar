@@ -496,6 +496,24 @@ async def get_inboxes_for_account(account_id: UUID) -> list[dict]:
         return await cur.fetchall()
 
 
+async def get_inbox_setup_rows(account_id: UUID) -> list[dict]:
+    """Para el wizard: si hay número y si ya tiene token cifrado (sin devolverlo)."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT name, phone_number_id,
+                   (credentials IS NOT NULL) AS has_credentials
+              FROM inboxes
+             WHERE account_id = %s
+             ORDER BY created_at
+            """,
+            (account_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
 async def get_inbox(inbox_id: UUID) -> dict | None:
     pool = await get_pool()
     async with pool.connection() as conn:

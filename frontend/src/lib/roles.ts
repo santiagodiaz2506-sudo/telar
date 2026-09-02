@@ -8,7 +8,7 @@ export const ROLE_LABEL: Record<string, string> = {
 }
 
 export const ROLE_HINT: Record<AccountRoleValue, string> = {
-  administrator: 'Gestiona miembros, equipos y los hilos conversacionales.',
+  administrator: 'Gestiona el número, el bot, el equipo y la configuración.',
   supervisor: 'Mueve gente entre equipos y reasigna conversaciones.',
   agent: 'Atiende conversaciones y ve contactos.',
 }

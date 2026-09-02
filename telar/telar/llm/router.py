@@ -86,9 +86,16 @@ async def create_llm_provider(
     provider_id = await repo.insert_llm_provider(
         account_id, body.name, body.provider, body.model, body.base_url, api_key
     )
+    # El primero de la cuenta queda activo: si no, el wizard crea un modelo
+    # que el bot nunca usa hasta que alguien aprieta "Activar".
+    is_active = False
+    if await repo.get_active_llm_provider(account_id) is None:
+        await repo.set_active_llm_provider(account_id, provider_id)
+        graph_cache.invalidate(account_id)
+        is_active = True
     return LlmProviderResponse(
         id=provider_id, name=body.name, provider=body.provider, model=body.model,
-        base_url=body.base_url, is_active=False,
+        base_url=body.base_url, is_active=is_active,
     )
 
 

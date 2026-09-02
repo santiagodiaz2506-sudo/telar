@@ -14,9 +14,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
+from telar.accounts.setup import graph_has_custom_prompt, next_setup_step
 from telar.auth.dependencies import Membership, get_current_user, require_role
 from telar.auth.roles import AccountRole
 from telar.auth.security import hash_password
+from telar.config import settings
 from telar.db import repositories as repo
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -29,6 +31,22 @@ class CreateAccountRequest(BaseModel):
 class AccountResponse(BaseModel):
     id: UUID
     name: str
+
+
+class SetupStatusResponse(BaseModel):
+    """Semáforo del happy path: número, modelo, instrucciones."""
+
+    ready: bool
+    complete: bool
+    next_step: str
+    has_inbox: bool
+    has_inbox_credentials: bool
+    uses_env_credentials: bool
+    has_active_llm: bool
+    uses_default_llm: bool
+    has_custom_prompt: bool
+    inbox_name: str | None
+    webhook_path: str
 
 
 class AddMemberRequest(BaseModel):
@@ -147,6 +165,45 @@ async def create_team(
 ) -> TeamResponse:
     team_id = await repo.insert_team(account_id, body.name)
     return TeamResponse(id=team_id, name=body.name)
+
+
+@router.get("/{account_id}/setup", response_model=SetupStatusResponse)
+async def get_setup_status(
+    account_id: UUID, membership: Membership = Depends(require_role())
+) -> SetupStatusResponse:
+    """Cualquier miembro puede ver si el bot está listo; configurar es de admin."""
+    del membership
+    inboxes = await repo.get_inbox_setup_rows(account_id)
+    active_llm = await repo.get_active_llm_provider(account_id)
+    graph = await repo.get_active_bot_graph(account_id)
+    s = settings()
+
+    has_inbox = bool(inboxes)
+    has_inbox_credentials = any(row["has_credentials"] for row in inboxes)
+    uses_env_credentials = bool(s.meta_access_token) and not has_inbox_credentials
+    has_active_llm = active_llm is not None
+    has_custom_prompt = graph_has_custom_prompt(graph)
+    step = next_setup_step(
+        has_inbox=has_inbox,
+        has_active_llm=has_active_llm,
+        has_custom_prompt=has_custom_prompt,
+    )
+    can_send = has_inbox and (has_inbox_credentials or uses_env_credentials)
+    complete = step == "done" and can_send
+
+    return SetupStatusResponse(
+        ready=can_send,
+        complete=complete,
+        next_step=step,
+        has_inbox=has_inbox,
+        has_inbox_credentials=has_inbox_credentials,
+        uses_env_credentials=uses_env_credentials,
+        has_active_llm=has_active_llm,
+        uses_default_llm=not has_active_llm and bool(s.default_model),
+        has_custom_prompt=has_custom_prompt,
+        inbox_name=inboxes[0]["name"] if inboxes else None,
+        webhook_path="/webhooks/whatsapp",
+    )
 
 
 @router.get("/{account_id}/teams", response_model=list[TeamResponse])

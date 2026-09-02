@@ -30,6 +30,7 @@ import type {
   ToolResponse,
   TokenResponse,
   TestConnectionResponse,
+  SetupStatusResponse,
 } from '@/types/api'
 
 /** El backend pagina con limit/offset y su default es 50. */
@@ -52,6 +53,10 @@ export function getMe() {
 
 export function getAccounts() {
   return apiFetch<AccountResponse[]>('/accounts')
+}
+
+export function getSetup(accountId: string) {
+  return apiFetch<SetupStatusResponse>(`/accounts/${accountId}/setup`)
 }
 
 export function createAccount(name: string) {

@@ -226,3 +226,19 @@ export interface StatsResponse {
   open: number
   resolved: number
 }
+
+export type SetupNextStep = 'inbox' | 'llm' | 'prompt' | 'done'
+
+export interface SetupStatusResponse {
+  ready: boolean
+  complete: boolean
+  next_step: SetupNextStep
+  has_inbox: boolean
+  has_inbox_credentials: boolean
+  uses_env_credentials: boolean
+  has_active_llm: boolean
+  uses_default_llm: boolean
+  has_custom_prompt: boolean
+  inbox_name: string | null
+  webhook_path: string
+}

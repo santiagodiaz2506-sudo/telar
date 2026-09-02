@@ -100,3 +100,45 @@ export function newAgentNodeId(): string {
   nodeCounter += 1
   return `agente_${Date.now()}_${nodeCounter}`
 }
+
+export interface AgentStep {
+  id: string
+  systemPrompt: string | null
+  tools: string[] | null
+  memoryWindow: number | null
+}
+
+/** El compilador solo entiende una cadena: este es el modelo del editor simple. */
+export function graphToSteps(graph: BotGraph): AgentStep[] {
+  const { nodes } = graphToFlow(graph)
+  const steps = nodes
+    .filter((n) => n.type === 'agent')
+    .map((n) => {
+      const data = n.data as AgentNodeData
+      return {
+        id: n.id,
+        systemPrompt: data.systemPrompt,
+        tools: data.tools,
+        memoryWindow: data.memoryWindow,
+      } satisfies AgentStep
+    })
+  return steps.length ? steps : graphToSteps(DEFAULT_GRAPH)
+}
+
+export function stepsToGraph(steps: AgentStep[]): BotGraph {
+  const usable = steps.length ? steps : graphToSteps(DEFAULT_GRAPH)
+  const nodes: GraphNode[] = usable.map((s) => ({
+    id: s.id,
+    type: 'agent',
+    system_prompt: s.systemPrompt || null,
+    tools: s.tools,
+    memory_window: s.memoryWindow,
+  }))
+  const ids = usable.map((s) => s.id)
+  const edges: { from: string; to: string }[] = [{ from: 'START', to: ids[0] }]
+  for (let i = 0; i < ids.length - 1; i++) {
+    edges.push({ from: ids[i], to: ids[i + 1] })
+  }
+  edges.push({ from: ids[ids.length - 1], to: 'END' })
+  return { nodes, edges }
+}
