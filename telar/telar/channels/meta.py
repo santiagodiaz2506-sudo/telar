@@ -17,6 +17,7 @@ from uuid import UUID
 import httpx
 
 from telar.config import settings
+from telar.core import crypto
 from telar.core.types import (
     Channel,
     ChannelAdapter,
@@ -28,6 +29,7 @@ from telar.core.types import (
     OutboundMessage,
     SendResult,
 )
+from telar.db import repositories as repo
 
 log = logging.getLogger(__name__)
 
@@ -178,9 +180,24 @@ class MetaWhatsAppAdapter(ChannelAdapter):
 
     # ---------------------------------------------------------------- salida
 
-    async def send(self, message: OutboundMessage, to: ContactRef) -> SendResult:
+    async def send(
+        self,
+        message: OutboundMessage,
+        to: ContactRef,
+        *,
+        phone_number_id: str | None = None,
+        access_token: str | None = None,
+    ) -> SendResult:
+        """
+        `phone_number_id`/`access_token` permiten enviar desde un inbox
+        específico de la cuenta en vez del número global de .env -- ver
+        resolve_inbox_credentials(). Si no se pasan, usa los del adapter
+        (instalación de un solo número, comportamiento de siempre).
+        """
+        phone_number_id = phone_number_id or self.phone_number_id
+        access_token = access_token or self.access_token
         body = self._build_body(message, to)
-        url = f"{self.base}/{self.phone_number_id}/messages"
+        url = f"{self.base}/{phone_number_id}/messages"
 
         # SendResult modela el "no se pudo enviar" (ok=False, error_code,
         # retryable) justamente para no dejar que un fallo de transporte
@@ -191,7 +208,7 @@ class MetaWhatsAppAdapter(ChannelAdapter):
                 resp = await client.post(
                     url,
                     json=body,
-                    headers={"Authorization": f"Bearer {self.access_token}"},
+                    headers={"Authorization": f"Bearer {access_token}"},
                 )
         except httpx.HTTPError as e:
             log.warning("envío falló: error de transporte %s", e)
@@ -250,16 +267,24 @@ class MetaWhatsAppAdapter(ChannelAdapter):
             body["context"] = {"message_id": message.reply_to_channel_message_id}
         return body
 
-    async def mark_read(self, channel_message_id: str) -> None:
+    async def mark_read(
+        self,
+        channel_message_id: str,
+        *,
+        phone_number_id: str | None = None,
+        access_token: str | None = None,
+    ) -> None:
+        phone_number_id = phone_number_id or self.phone_number_id
+        access_token = access_token or self.access_token
         async with httpx.AsyncClient(timeout=10) as client:
             await client.post(
-                f"{self.base}/{self.phone_number_id}/messages",
+                f"{self.base}/{phone_number_id}/messages",
                 json={
                     "messaging_product": "whatsapp",
                     "status": "read",
                     "message_id": channel_message_id,
                 },
-                headers={"Authorization": f"Bearer {self.access_token}"},
+                headers={"Authorization": f"Bearer {access_token}"},
             )
 
     async def download_media(self, media: MediaRef) -> MediaRef:
@@ -290,3 +315,25 @@ def default_adapter() -> MetaWhatsAppAdapter:
         verify_token=s.meta_verify_token,
         api_version=s.meta_api_version,
     )
+
+
+async def resolve_inbox_credentials(inbox_id: UUID) -> tuple[str, str]:
+    """
+    (phone_number_id, access_token) a usar para enviar por este inbox.
+
+    Si el inbox no tiene credenciales propias todavía -- el caso de una
+    instalación de un solo número que sigue operando 100% desde .env, o de
+    un inbox creado antes de que existiera este CRUD -- cae a las
+    variables de entorno globales. Así ninguna instalación existente se
+    rompe al adoptar inboxes con credenciales propias.
+    """
+    s = settings()
+    inbox = await repo.get_inbox(inbox_id)
+
+    phone_number_id = (inbox and inbox.get("phone_number_id")) or s.meta_phone_number_id
+    if inbox and inbox.get("credentials"):
+        access_token = crypto.decrypt(bytes(inbox["credentials"]).decode())
+    else:
+        access_token = s.meta_access_token
+
+    return phone_number_id, access_token

@@ -1,0 +1,40 @@
+"""
+Caché de grafos compilados por cuenta.
+
+Un grafo por cuenta: cada una puede tener sus propias tools configurables, y
+bind_tools() necesita conocer la lista completa de antemano (compiler.py la
+"hornea" en el modelo al compilar). Antes este caché vivía como atributo de
+instancia de Pipeline (worker/pipeline.py), en un proceso que no tenía
+ninguna referencia al router que guarda bot_versions o al que administra
+tools/KBs -- por eso una tool nueva no se veía sin reiniciar el proceso.
+
+Vivir a nivel de módulo permite que cualquier código que mute lo que el
+grafo compilado ve (guardar un bot_version, activar otra versión, crear o
+editar una tool, tocar una base de conocimiento) llame invalidate() sin
+necesitar una referencia al Pipeline en ejecución.
+"""
+
+from __future__ import annotations
+
+from uuid import UUID
+
+from telar.agent.graph import build_graph
+from telar.custom_tools.loader import build_custom_tools
+from telar.db import repositories as repo
+
+_graphs: dict[str, object] = {}
+
+
+async def get_or_build(account_id: UUID, checkpointer) -> object:
+    key = str(account_id)
+    if key not in _graphs:
+        extra_tools = await build_custom_tools(account_id)
+        graph_json = await repo.get_active_bot_graph(account_id)
+        _graphs[key] = build_graph(
+            checkpointer=checkpointer, extra_tools=extra_tools, graph_json=graph_json
+        )
+    return _graphs[key]
+
+
+def invalidate(account_id: UUID) -> None:
+    _graphs.pop(str(account_id), None)

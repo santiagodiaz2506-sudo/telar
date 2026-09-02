@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from telar.auth.dependencies import get_current_user
-from telar.auth.security import create_access_token, verify_dummy_password, verify_password
+from telar.auth.security import (
+    create_access_token,
+    hash_password,
+    verify_dummy_password,
+    verify_password,
+)
 from telar.config import settings
 from telar.core.ratelimit import SlidingWindowLimiter
 from telar.db import repositories as repo
@@ -48,6 +53,11 @@ class MeResponse(BaseModel):
     accounts: list[AccountMembership]
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, request: Request) -> TokenResponse:
     # Rate limit por IP: protege contra fuerza bruta sobre el password.
@@ -83,3 +93,17 @@ async def me(user: dict = Depends(get_current_user)) -> MeResponse:
         is_superadmin=user["is_superadmin"],
         accounts=[AccountMembership(**a) for a in accounts],
     )
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    body: ChangePasswordRequest, user: dict = Depends(get_current_user)
+) -> None:
+    """
+    Para el caso de "sumar miembro" (accounts/router.py:add_member): a un
+    usuario recién creado se le entrega una contraseña temporal fuera de
+    banda, y esto es lo que usa para fijar la suya en el primer login.
+    """
+    if not verify_password(body.current_password, user["password_hash"]):
+        raise _INVALID_CREDENTIALS
+    await repo.update_user_password(user["id"], hash_password(body.new_password))

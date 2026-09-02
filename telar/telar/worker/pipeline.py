@@ -14,13 +14,12 @@ import logging
 from langchain_core.messages import HumanMessage, ToolMessage
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
-from telar.agent.graph import build_graph
+from telar.agent import graph_cache
 from telar.agent.tools import escalar_a_humano
-from telar.channels.meta import MetaWhatsAppAdapter
+from telar.channels.meta import MetaWhatsAppAdapter, resolve_inbox_credentials
 from telar.config import settings
 from telar.core import state as st
 from telar.core.types import InboundMessage, OutboundMessage, SenderType
-from telar.custom_tools.loader import build_custom_tools
 from telar.db import repositories as repo
 from telar.db.pool import get_pool
 
@@ -30,11 +29,6 @@ log = logging.getLogger(__name__)
 class Pipeline:
     def __init__(self, adapter: MetaWhatsAppAdapter) -> None:
         self.adapter = adapter
-        # Un grafo por cuenta: cada una puede tener sus propias tools
-        # configurables, y bind_tools() necesita conocer la lista completa
-        # de antemano. Limitación v0: si se agrega/edita una tool hace
-        # falta reiniciar el proceso para que la cuenta la vea.
-        self._graphs: dict[str, object] = {}
         self._checkpointer = None
         # Tope global de invocaciones concurrentes al LLM: protege el pool
         # de Postgres y el rate limit del proveedor de un pico de tráfico.
@@ -50,23 +44,25 @@ class Pipeline:
         return self._checkpointer
 
     async def _get_graph(self, account_id):
-        key = str(account_id)
-        if key not in self._graphs:
-            checkpointer = await self._get_checkpointer()
-            extra_tools = await build_custom_tools(account_id)
-            graph_json = await repo.get_active_bot_graph(account_id)
-            self._graphs[key] = build_graph(
-                checkpointer=checkpointer, extra_tools=extra_tools, graph_json=graph_json
-            )
-        return self._graphs[key]
+        checkpointer = await self._get_checkpointer()
+        return await graph_cache.get_or_build(account_id, checkpointer)
 
     async def handle(self, batch: list[InboundMessage]) -> None:
         first = batch[0]
 
         contact_id = await repo.upsert_contact(first.account_id, first.contact)
+        default_team_id = await repo.get_inbox_default_team(first.inbox_id)
         conv = await repo.get_or_create_conversation(
-            first.account_id, first.inbox_id, contact_id, bot_id=None
+            first.account_id,
+            first.inbox_id,
+            contact_id,
+            bot_id=None,
+            default_team_id=default_team_id,
         )
+
+        # Un solo lookup por lote: todos los mensajes del batch son del mismo
+        # inbox (agrupados por contacto+inbox en el dispatcher).
+        phone_number_id, access_token = await resolve_inbox_credentials(first.inbox_id)
 
         # save_inbound devuelve None si el mensaje ya estaba guardado (Meta
         # reintenta el webhook). Solo los mensajes nuevos entran al turno del
@@ -76,7 +72,11 @@ class Pipeline:
         for msg in batch:
             inserted_id = await repo.save_inbound(msg, conv.id)
             if msg.channel_message_id:
-                await self.adapter.mark_read(msg.channel_message_id)
+                await self.adapter.mark_read(
+                    msg.channel_message_id,
+                    phone_number_id=phone_number_id,
+                    access_token=access_token,
+                )
             if inserted_id is not None:
                 new_messages.append(msg)
 
@@ -110,7 +110,7 @@ class Pipeline:
         answer = reply.content if isinstance(reply.content, str) else str(reply.content)
 
         if answer.strip():
-            await self._send(conv, first, answer)
+            await self._send(conv, first, answer, phone_number_id, access_token)
 
         # Si el agente llamó a la tool de handoff, soltamos la conversación.
         # Se inspecciona el ToolMessage de la ejecución, no el texto de la
@@ -123,15 +123,26 @@ class Pipeline:
             await repo.save_conversation(conv)
             log.info("conversación %s transferida a humano", conv.id)
 
-    async def _send(self, conv, inbound: InboundMessage, text: str) -> None:
+    async def _send(
+        self,
+        conv,
+        inbound: InboundMessage,
+        text: str,
+        phone_number_id: str,
+        access_token: str,
+    ) -> None:
         if not st.window_is_open(conv):
             log.warning("ventana de 24h cerrada en %s: se requiere plantilla", conv.id)
+            st.request_handoff(conv, team_id=conv.team_id)
+            await repo.save_conversation(conv)
             return
 
         out = OutboundMessage(
             conversation_id=conv.id, sender_type=SenderType.BOT, text=text
         )
-        result = await self.adapter.send(out, inbound.contact)
+        result = await self.adapter.send(
+            out, inbound.contact, phone_number_id=phone_number_id, access_token=access_token
+        )
         await repo.save_outbound(
             out, inbound.account_id, inbound.inbox_id, result.channel_message_id
         )

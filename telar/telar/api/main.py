@@ -13,10 +13,13 @@ from telar.accounts.router import router as accounts_router
 from telar.agent.router import router as agent_router
 from telar.auth.router import router as auth_router
 from telar.channels.meta import default_adapter
-from telar.conversations.router import router as conversations_router
 from telar.config import settings
+from telar.conversations.router import router as conversations_router
+from telar.custom_tools.router import router as tools_router
 from telar.db import repositories as repo
 from telar.db.pool import close_pool, get_pool
+from telar.inboxes.router import router as inboxes_router
+from telar.kb.router import router as kb_router
 from telar.worker.dispatcher import Dispatcher
 from telar.worker.pipeline import Pipeline
 
@@ -117,3 +120,6 @@ app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(conversations_router)
 app.include_router(agent_router)
+app.include_router(inboxes_router)
+app.include_router(tools_router)
+app.include_router(kb_router)

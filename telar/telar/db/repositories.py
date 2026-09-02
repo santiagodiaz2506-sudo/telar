@@ -6,6 +6,7 @@ una query visible enseña más que un ORM que hay que aprender.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from uuid import UUID
 
 from psycopg.rows import dict_row
@@ -33,6 +34,16 @@ async def resolve_inbox(phone_number_id: str) -> dict | None:
         cur.row_factory = dict_row
         rows = await cur.fetchall()
     return rows[0] if rows else None
+
+
+async def get_inbox_default_team(inbox_id: UUID) -> UUID | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT default_team_id FROM inboxes WHERE id = %s", (inbox_id,)
+        )
+        row = await cur.fetchone()
+    return row[0] if row else None
 
 
 async def already_processed(inbox_id: UUID, channel_message_id: str) -> bool:
@@ -64,12 +75,18 @@ async def upsert_contact(account_id: UUID, contact: ContactRef) -> UUID:
 
 
 async def get_or_create_conversation(
-    account_id: UUID, inbox_id: UUID, contact_id: UUID, bot_id: UUID | None
+    account_id: UUID,
+    inbox_id: UUID,
+    contact_id: UUID,
+    bot_id: UUID | None,
+    default_team_id: UUID | None = None,
 ) -> Conversation:
     """
     El índice parcial one_live_conversation garantiza que no haya dos
     conversaciones vivas para el mismo contacto, incluso con webhooks
-    simultáneos.
+    simultáneos. `default_team_id` (el default_team_id del inbox) solo se
+    usa al crear una conversación nueva, para que la cola por equipo tenga
+    algo que propagar desde el primer mensaje.
     """
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -88,12 +105,12 @@ async def get_or_create_conversation(
             cur = await conn.execute(
                 """
                 INSERT INTO conversations
-                    (account_id, inbox_id, contact_id, status, bot_id)
-                VALUES (%s, %s, %s, 'bot', %s)
+                    (account_id, inbox_id, contact_id, status, bot_id, team_id)
+                VALUES (%s, %s, %s, 'bot', %s, %s)
                 RETURNING id, status, assignee_id, team_id, bot_id,
                           last_contact_message_at, resolved_at
                 """,
-                (account_id, inbox_id, contact_id, bot_id),
+                (account_id, inbox_id, contact_id, bot_id, default_team_id),
             )
             row = await cur.fetchone()
 
@@ -296,6 +313,14 @@ async def insert_user(
     return row[0]
 
 
+async def update_user_password(user_id: UUID, password_hash: str) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id)
+        )
+
+
 async def get_tools_for_account(account_id: UUID) -> list[dict]:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -337,6 +362,221 @@ async def insert_tool(
         )
         row = await cur.fetchone()
     return row[0]
+
+
+async def get_tools_for_account_admin(account_id: UUID) -> list[dict]:
+    """Todas las tools de la cuenta (incluidas las deshabilitadas), sin el secreto."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, name, description, kind, config, schema, enabled "
+            "FROM tools WHERE account_id = %s ORDER BY name",
+            (account_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def get_tool(tool_id: UUID) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, account_id, name, description, kind, config, schema, "
+            "secret_config, enabled FROM tools WHERE id = %s",
+            (tool_id,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def update_tool(
+    tool_id: UUID, name: str, description: str, config: dict, schema: dict, enabled: bool
+) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            UPDATE tools
+               SET name = %s, description = %s, config = %s, schema = %s, enabled = %s
+             WHERE id = %s
+            """,
+            (name, description, json.dumps(config), json.dumps(schema), enabled, tool_id),
+        )
+
+
+async def update_tool_secret(tool_id: UUID, secret_config: bytes | None) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE tools SET secret_config = %s WHERE id = %s", (secret_config, tool_id)
+        )
+
+
+async def delete_tool(tool_id: UUID) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute("DELETE FROM tools WHERE id = %s", (tool_id,))
+
+
+async def insert_knowledge_base(account_id: UUID, name: str) -> UUID:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "INSERT INTO knowledge_bases (account_id, name) VALUES (%s, %s) RETURNING id",
+            (account_id, name),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def get_knowledge_bases_for_account(account_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, name, embedding_model, dimensions FROM knowledge_bases "
+            "WHERE account_id = %s ORDER BY name",
+            (account_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def get_knowledge_base(knowledge_base_id: UUID) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, account_id, name, embedding_model, dimensions "
+            "FROM knowledge_bases WHERE id = %s",
+            (knowledge_base_id,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def delete_knowledge_base(knowledge_base_id: UUID) -> None:
+    """kb_chunks se borra en cascada (ON DELETE CASCADE en la migración)."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute("DELETE FROM knowledge_bases WHERE id = %s", (knowledge_base_id,))
+
+
+async def insert_inbox(
+    account_id: UUID,
+    name: str,
+    phone_number_id: str,
+    waba_id: str | None,
+    credentials: bytes | None,
+    default_team_id: UUID | None,
+) -> UUID:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO inboxes (account_id, name, phone_number_id, waba_id, credentials, default_team_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            RETURNING id
+            """,
+            (account_id, name, phone_number_id, waba_id, credentials, default_team_id),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def get_inboxes_for_account(account_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, name, channel, phone_number_id, waba_id, default_team_id, created_at "
+            "FROM inboxes WHERE account_id = %s ORDER BY name",
+            (account_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def get_inbox(inbox_id: UUID) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, account_id, name, channel, phone_number_id, waba_id, "
+            "credentials, default_team_id, created_at FROM inboxes WHERE id = %s",
+            (inbox_id,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def update_inbox(
+    inbox_id: UUID, name: str, default_team_id: UUID | None
+) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE inboxes SET name = %s, default_team_id = %s WHERE id = %s",
+            (name, default_team_id, inbox_id),
+        )
+
+
+async def update_inbox_credentials(
+    inbox_id: UUID, phone_number_id: str, waba_id: str | None, credentials: bytes | None
+) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE inboxes SET phone_number_id = %s, waba_id = %s, credentials = %s WHERE id = %s",
+            (phone_number_id, waba_id, credentials, inbox_id),
+        )
+
+
+async def insert_message_template(
+    account_id: UUID, name: str, language: str, components: list[dict]
+) -> UUID:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO message_templates (account_id, name, language, components)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id
+            """,
+            (account_id, name, language, json.dumps(components)),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
+async def get_message_templates_for_account(account_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, name, language, components, created_at FROM message_templates "
+            "WHERE account_id = %s ORDER BY name",
+            (account_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def get_message_template(template_id: UUID) -> dict | None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, account_id, name, language, components FROM message_templates "
+            "WHERE id = %s",
+            (template_id,),
+        )
+        cur.row_factory = dict_row
+        rows = await cur.fetchall()
+    return rows[0] if rows else None
+
+
+async def delete_message_template(template_id: UUID) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute("DELETE FROM message_templates WHERE id = %s", (template_id,))
 
 
 async def insert_account(name: str) -> UUID:
@@ -467,6 +707,23 @@ async def delete_team_member(team_id: UUID, user_id: UUID) -> None:
         )
 
 
+async def get_team_members(team_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT u.id AS user_id, u.email, u.name
+              FROM team_members tm
+              JOIN users u ON u.id = tm.user_id
+             WHERE tm.team_id = %s
+             ORDER BY u.name
+            """,
+            (team_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
 async def get_conversation(conversation_id: UUID) -> Conversation | None:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -499,40 +756,68 @@ async def get_conversation(conversation_id: UUID) -> Conversation | None:
 
 
 async def get_conversations_for_account(
-    account_id: UUID, status: str | None = None, limit: int = 50, offset: int = 0
+    account_id: UUID,
+    status: str | None = None,
+    team_id: UUID | None = None,
+    assignee_id: UUID | None = None,
+    q: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[dict]:
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT c.id, c.status, c.assignee_id, c.last_contact_message_at,
+            SELECT c.id, c.status, c.assignee_id, c.team_id, c.last_contact_message_at,
                    ct.id AS contact_id, ct.name AS contact_name, ct.phone AS contact_phone
               FROM conversations c
               JOIN contacts ct ON ct.id = c.contact_id
              WHERE c.account_id = %(account_id)s
                AND (%(status)s::text IS NULL OR c.status = %(status)s::conversation_status)
+               AND (%(team_id)s::uuid IS NULL OR c.team_id = %(team_id)s::uuid)
+               AND (%(assignee_id)s::uuid IS NULL OR c.assignee_id = %(assignee_id)s::uuid)
+               AND (
+                    %(q)s::text IS NULL
+                    OR ct.name ILIKE '%%' || %(q)s || '%%'
+                    OR ct.phone ILIKE '%%' || %(q)s || '%%'
+               )
              ORDER BY c.last_contact_message_at DESC NULLS LAST
              LIMIT %(limit)s OFFSET %(offset)s
             """,
-            {"account_id": account_id, "status": status, "limit": limit, "offset": offset},
+            {
+                "account_id": account_id,
+                "status": status,
+                "team_id": team_id,
+                "assignee_id": assignee_id,
+                "q": q,
+                "limit": limit,
+                "offset": offset,
+            },
         )
         cur.row_factory = dict_row
         return await cur.fetchall()
 
 
-async def get_messages_for_conversation(conversation_id: UUID, limit: int = 50) -> list[dict]:
-    """Últimos N mensajes, devueltos en orden cronológico ascendente."""
+async def get_messages_for_conversation(
+    conversation_id: UUID, limit: int = 50, before: datetime | None = None
+) -> list[dict]:
+    """
+    Últimos N mensajes anteriores a `before` (o al momento actual si no se
+    pasa), devueltos en orden cronológico ascendente. `before` permite subir
+    en el historial: se pasa el created_at del mensaje más viejo ya cargado.
+    """
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
             SELECT id, sender_type, sender_id, type, content, delivery_status, created_at
               FROM messages
-             WHERE conversation_id = %s
+             WHERE conversation_id = %(conversation_id)s
+               AND (%(before)s::timestamptz IS NULL OR created_at < %(before)s::timestamptz)
              ORDER BY created_at DESC
-             LIMIT %s
+             LIMIT %(limit)s
             """,
-            (conversation_id, limit),
+            {"conversation_id": conversation_id, "before": before, "limit": limit},
         )
         cur.row_factory = dict_row
         rows = await cur.fetchall()
@@ -540,7 +825,7 @@ async def get_messages_for_conversation(conversation_id: UUID, limit: int = 50) 
 
 
 async def get_contacts_for_account(
-    account_id: UUID, limit: int = 50, offset: int = 0
+    account_id: UUID, q: str | None = None, limit: int = 50, offset: int = 0
 ) -> list[dict]:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -548,11 +833,17 @@ async def get_contacts_for_account(
             """
             SELECT id, external_id, name, phone, email, created_at
               FROM contacts
-             WHERE account_id = %s
+             WHERE account_id = %(account_id)s
+               AND (
+                    %(q)s::text IS NULL
+                    OR name ILIKE '%%' || %(q)s || '%%'
+                    OR phone ILIKE '%%' || %(q)s || '%%'
+                    OR email ILIKE '%%' || %(q)s || '%%'
+               )
              ORDER BY created_at DESC
-             LIMIT %s OFFSET %s
+             LIMIT %(limit)s OFFSET %(offset)s
             """,
-            (account_id, limit, offset),
+            {"account_id": account_id, "q": q, "limit": limit, "offset": offset},
         )
         cur.row_factory = dict_row
         return await cur.fetchall()
@@ -562,7 +853,7 @@ async def get_contact(contact_id: UUID) -> dict | None:
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT id, external_id, name, phone FROM contacts WHERE id = %s",
+            "SELECT id, external_id, name, phone, email FROM contacts WHERE id = %s",
             (contact_id,),
         )
         cur.row_factory = dict_row
@@ -620,20 +911,42 @@ async def get_next_bot_version(bot_id: UUID) -> int:
 
 
 async def insert_bot_version(
-    bot_id: UUID, version: int, graph: dict, notes: str | None = None
+    bot_id: UUID,
+    version: int,
+    graph: dict,
+    notes: str | None = None,
+    created_by: UUID | None = None,
 ) -> UUID:
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            INSERT INTO bot_versions (bot_id, version, graph, notes)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO bot_versions (bot_id, version, graph, notes, created_by)
+            VALUES (%s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (bot_id, version, json.dumps(graph), notes),
+            (bot_id, version, json.dumps(graph), notes, created_by),
         )
         row = await cur.fetchone()
     return row[0]
+
+
+async def list_bot_versions(bot_id: UUID) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT bv.id, bv.version, bv.notes, bv.created_by, bv.created_at,
+                   bv.id = b.active_version_id AS is_active
+              FROM bot_versions bv
+              JOIN bots b ON b.id = bv.bot_id
+             WHERE bv.bot_id = %s
+             ORDER BY bv.version DESC
+            """,
+            (bot_id,),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
 
 
 async def set_active_bot_version(bot_id: UUID, version_id: UUID) -> None:

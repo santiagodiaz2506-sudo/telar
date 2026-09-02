@@ -21,10 +21,12 @@ from telar.kb.chunking import split_text
 from telar.llm.embeddings import get_embeddings
 
 
-async def ingest_file(
-    knowledge_base_id: UUID, path: Path, source: str | None = None
-) -> int:
-    text = path.read_text(encoding="utf-8")
+async def ingest_text(knowledge_base_id: UUID, text: str, source: str | None = None) -> int:
+    """
+    El fragmentado + embeddings + insert que antes solo corría desde el CLI
+    -- extraído para que el endpoint HTTP de ingesta (kb/router.py) use
+    exactamente la misma lógica en vez de duplicarla.
+    """
     chunks = split_text(text)
     if not chunks:
         return 0
@@ -32,12 +34,16 @@ async def ingest_file(
     embeddings = get_embeddings()
     vectors = await embeddings.aembed_documents(chunks)
 
-    rows = [
-        (source or path.name, chunk, vector)
-        for chunk, vector in zip(chunks, vectors)
-    ]
+    rows = [(source, chunk, vector) for chunk, vector in zip(chunks, vectors)]
     await repo.insert_kb_chunks(knowledge_base_id, rows)
     return len(rows)
+
+
+async def ingest_file(
+    knowledge_base_id: UUID, path: Path, source: str | None = None
+) -> int:
+    text = path.read_text(encoding="utf-8")
+    return await ingest_text(knowledge_base_id, text, source or path.name)
 
 
 def main() -> None:

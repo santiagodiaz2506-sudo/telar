@@ -8,6 +8,7 @@ alta/baja en la cuenta ni crear equipos; agent no gestiona nada de esto.
 
 from __future__ import annotations
 
+import secrets
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 
 from telar.auth.dependencies import Membership, get_current_user, require_role
 from telar.auth.roles import AccountRole
+from telar.auth.security import hash_password
 from telar.db import repositories as repo
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
@@ -32,6 +34,7 @@ class AccountResponse(BaseModel):
 class AddMemberRequest(BaseModel):
     email: str
     role: AccountRole
+    name: str | None = None  # requerido solo si el email todavía no tiene usuario
 
 
 class MemberResponse(BaseModel):
@@ -39,6 +42,7 @@ class MemberResponse(BaseModel):
     email: str
     name: str
     role: str
+    temporary_password: str | None = None  # presente una sola vez: se creó el usuario ahora
 
 
 class CreateTeamRequest(BaseModel):
@@ -52,6 +56,12 @@ class TeamResponse(BaseModel):
 
 class TeamMemberRequest(BaseModel):
     user_id: UUID
+
+
+class TeamMemberResponse(BaseModel):
+    user_id: UUID
+    email: str
+    name: str
 
 
 @router.post("", response_model=AccountResponse)
@@ -81,15 +91,29 @@ async def add_member(
     membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR)),
 ) -> MemberResponse:
     target = await repo.get_user_by_email(body.email)
+    temporary_password: str | None = None
+
     if target is None:
-        raise HTTPException(
-            status.HTTP_404_NOT_FOUND,
-            "No existe un usuario con ese email. Creálo primero con create_user.py",
-        )
+        # No hay infraestructura de invitación por email en el proyecto: se
+        # crea el usuario acá mismo con una contraseña temporal que el
+        # administrador comparte fuera de banda. El usuario la cambia con
+        # POST /auth/change-password en su primer login.
+        if not body.name:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "No existe un usuario con ese email. Mandá 'name' para crearlo de una.",
+            )
+        temporary_password = secrets.token_urlsafe(12)
+        user_id = await repo.insert_user(body.email, body.name, hash_password(temporary_password))
+        target = {"id": user_id, "email": body.email, "name": body.name}
 
     await repo.insert_account_membership(account_id, target["id"], body.role.value)
     return MemberResponse(
-        user_id=target["id"], email=target["email"], name=target["name"], role=body.role.value
+        user_id=target["id"],
+        email=target["email"],
+        name=target["name"],
+        role=body.role.value,
+        temporary_password=temporary_password,
     )
 
 
@@ -126,6 +150,14 @@ async def list_teams(
 ) -> list[TeamResponse]:
     rows = await repo.get_teams_for_account(account_id)
     return [TeamResponse(**row) for row in rows]
+
+
+@router.get("/{account_id}/teams/{team_id}/members", response_model=list[TeamMemberResponse])
+async def list_team_members(
+    account_id: UUID, team_id: UUID, membership: Membership = Depends(require_role())
+) -> list[TeamMemberResponse]:
+    rows = await repo.get_team_members(team_id)
+    return [TeamMemberResponse(**row) for row in rows]
 
 
 @router.post("/{account_id}/teams/{team_id}/members", status_code=status.HTTP_204_NO_CONTENT)

@@ -17,9 +17,16 @@ from pydantic import BaseModel
 
 from telar.auth.dependencies import Membership, require_role
 from telar.auth.roles import AccountRole
-from telar.channels.meta import default_adapter
+from telar.channels.meta import default_adapter, resolve_inbox_credentials
 from telar.core import state as st
-from telar.core.types import ContactRef, ConversationStatus, OutboundMessage, SenderType
+from telar.core.types import (
+    ContactRef,
+    ConversationStatus,
+    MessageType,
+    OutboundMessage,
+    SenderType,
+    TemplateRef,
+)
 from telar.db import repositories as repo
 
 router = APIRouter(prefix="/accounts/{account_id}", tags=["conversations"])
@@ -32,6 +39,7 @@ class ConversationResponse(BaseModel):
     id: UUID
     status: str
     assignee_id: UUID | None
+    team_id: UUID | None
     contact_id: UUID
     contact_name: str | None
     contact_phone: str | None
@@ -50,6 +58,7 @@ class MessageResponse(BaseModel):
     sender_id: UUID | None
     type: str
     content: str | None
+    delivery_status: str
     created_at: datetime
 
 
@@ -58,11 +67,18 @@ class ConversationDetailResponse(BaseModel):
     status: str
     assignee_id: UUID | None
     contact_id: UUID
+    contact_name: str | None
+    contact_phone: str | None
+    last_contact_message_at: datetime | None
     messages: list[MessageResponse]
 
 
 class AssignRequest(BaseModel):
     assignee_id: UUID | None = None  # vacío = tomarla para uno mismo
+
+
+class ReleaseRequest(BaseModel):
+    team_id: UUID | None = None  # vacío = mantener el equipo actual de la conversación
 
 
 class SendMessageRequest(BaseModel):
@@ -74,6 +90,7 @@ class ContactResponse(BaseModel):
     external_id: str
     name: str | None
     phone: str | None
+    email: str | None
 
 
 class StatsResponse(BaseModel):
@@ -81,6 +98,24 @@ class StatsResponse(BaseModel):
     pending: int
     open: int
     resolved: int
+
+
+class CreateTemplateRequest(BaseModel):
+    name: str
+    language: str = "es"
+    components: list[dict] = []
+
+
+class TemplateResponse(BaseModel):
+    id: UUID
+    name: str
+    language: str
+    components: list[dict]
+
+
+class SendTemplateRequest(BaseModel):
+    template_id: UUID
+    params: dict[str, str] = {}  # {{1}}, {{2}}... de los componentes con texto variable
 
 
 async def _get_conversation_or_404(account_id: UUID, conversation_id: UUID):
@@ -94,16 +129,22 @@ async def _get_conversation_or_404(account_id: UUID, conversation_id: UUID):
 async def list_conversations(
     account_id: UUID,
     status_filter: Literal["bot", "pending", "open", "resolved"] | None = None,
+    team_id: UUID | None = None,
+    assignee_id: UUID | None = None,
+    q: str | None = None,
     limit: int = 50,
     offset: int = 0,
     membership: Membership = Depends(require_role()),
 ) -> list[ConversationResponse]:
-    rows = await repo.get_conversations_for_account(account_id, status_filter, limit, offset)
+    rows = await repo.get_conversations_for_account(
+        account_id, status_filter, team_id, assignee_id, q, limit, offset
+    )
     return [
         ConversationResponse(
             id=r["id"],
             status=r["status"],
             assignee_id=r["assignee_id"],
+            team_id=r["team_id"],
             contact_id=r["contact_id"],
             contact_name=r["contact_name"],
             contact_phone=r["contact_phone"],
@@ -117,15 +158,21 @@ async def list_conversations(
 async def get_conversation_detail(
     account_id: UUID,
     conversation_id: UUID,
+    limit: int = 50,
+    before: datetime | None = None,
     membership: Membership = Depends(require_role()),
 ) -> ConversationDetailResponse:
     conv = await _get_conversation_or_404(account_id, conversation_id)
-    messages = await repo.get_messages_for_conversation(conversation_id)
+    messages = await repo.get_messages_for_conversation(conversation_id, limit=limit, before=before)
+    contact = await repo.get_contact(conv.contact_id)
     return ConversationDetailResponse(
         id=conv.id,
         status=conv.status.value,
         assignee_id=conv.assignee_id,
         contact_id=conv.contact_id,
+        contact_name=contact["name"] if contact else None,
+        contact_phone=contact["phone"] if contact else None,
+        last_contact_message_at=conv.last_contact_message_at,
         messages=[MessageResponse(**m) for m in messages],
     )
 
@@ -180,12 +227,13 @@ async def resolve_conversation(
 async def release_conversation(
     account_id: UUID,
     conversation_id: UUID,
+    body: ReleaseRequest = ReleaseRequest(),
     membership: Membership = Depends(require_role()),
 ) -> ConversationStatusResponse:
     conv = await _get_conversation_or_404(account_id, conversation_id)
 
     try:
-        st.request_handoff(conv)
+        st.request_handoff(conv, team_id=body.team_id or conv.team_id)
     except st.InvalidTransition as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
 
@@ -230,7 +278,10 @@ async def send_message(
     contact_ref = ContactRef(
         external_id=contact["external_id"], name=contact["name"], phone=contact["phone"]
     )
-    result = await adapter.send(out, contact_ref)
+    phone_number_id, access_token = await resolve_inbox_credentials(conv.inbox_id)
+    result = await adapter.send(
+        out, contact_ref, phone_number_id=phone_number_id, access_token=access_token
+    )
     saved_id = await repo.save_outbound(out, account_id, conv.inbox_id, result.channel_message_id)
 
     if not result.ok:
@@ -244,6 +295,76 @@ async def send_message(
         sender_id=membership.user_id,
         type="text",
         content=body.text,
+        delivery_status="sent" if result.channel_message_id else "failed",
+        created_at=datetime.now(timezone.utc),
+    )
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages/template", response_model=MessageResponse
+)
+async def send_template_message(
+    account_id: UUID,
+    conversation_id: UUID,
+    body: SendTemplateRequest,
+    membership: Membership = Depends(require_role()),
+) -> MessageResponse:
+    """
+    A diferencia de /messages, esto ignora deliberadamente window_is_open:
+    una plantilla aprobada por Meta es exactamente lo que existe para poder
+    escribirle a un contacto fuera de (o para reabrir) la ventana de 24h.
+    """
+    conv = await _get_conversation_or_404(account_id, conversation_id)
+
+    is_owner = conv.assignee_id == membership.user_id
+    can_override = membership.is_superadmin or membership.role in _ELEVATED_ROLES
+    if conv.status is ConversationStatus.OPEN and not is_owner and not can_override:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Esta conversación la tiene otra persona")
+
+    template = await repo.get_message_template(body.template_id)
+    if template is None or template["account_id"] != account_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plantilla no encontrada")
+
+    contact = await repo.get_contact(conv.contact_id)
+    if contact is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Contacto no encontrado")
+
+    template_ref = TemplateRef(
+        name=template["name"], language=template["language"], components=template["components"]
+    )
+    # _build_body() (channels/meta.py) prioriza `template` sobre `text` -- el
+    # texto acá es solo para que el mensaje se vea en el hilo, nunca se manda
+    # como body a Meta cuando hay una plantilla.
+    display_text = f"[plantilla] {template['name']}"
+    out = OutboundMessage(
+        conversation_id=conv.id,
+        sender_type=SenderType.AGENT,
+        sender_id=membership.user_id,
+        type=MessageType.TEMPLATE,
+        text=display_text,
+        template=template_ref,
+    )
+    contact_ref = ContactRef(
+        external_id=contact["external_id"], name=contact["name"], phone=contact["phone"]
+    )
+    phone_number_id, access_token = await resolve_inbox_credentials(conv.inbox_id)
+    result = await adapter.send(
+        out, contact_ref, phone_number_id=phone_number_id, access_token=access_token
+    )
+    saved_id = await repo.save_outbound(out, account_id, conv.inbox_id, result.channel_message_id)
+
+    if not result.ok:
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"No se pudo enviar: {result.error_message}"
+        )
+
+    return MessageResponse(
+        id=saved_id,
+        sender_type=SenderType.AGENT.value,
+        sender_id=membership.user_id,
+        type="template",
+        content=display_text,
+        delivery_status="sent" if result.channel_message_id else "failed",
         created_at=datetime.now(timezone.utc),
     )
 
@@ -251,13 +372,20 @@ async def send_message(
 @router.get("/contacts", response_model=list[ContactResponse])
 async def list_contacts(
     account_id: UUID,
+    q: str | None = None,
     limit: int = 50,
     offset: int = 0,
     membership: Membership = Depends(require_role()),
 ) -> list[ContactResponse]:
-    rows = await repo.get_contacts_for_account(account_id, limit, offset)
+    rows = await repo.get_contacts_for_account(account_id, q, limit, offset)
     return [
-        ContactResponse(id=r["id"], external_id=r["external_id"], name=r["name"], phone=r["phone"])
+        ContactResponse(
+            id=r["id"],
+            external_id=r["external_id"],
+            name=r["name"],
+            phone=r["phone"],
+            email=r["email"],
+        )
         for r in rows
     ]
 
@@ -268,3 +396,41 @@ async def get_stats(
 ) -> StatsResponse:
     counts = await repo.get_conversation_stats(account_id)
     return StatsResponse(**counts)
+
+
+@router.get("/templates", response_model=list[TemplateResponse])
+async def list_templates(
+    account_id: UUID, membership: Membership = Depends(require_role())
+) -> list[TemplateResponse]:
+    rows = await repo.get_message_templates_for_account(account_id)
+    return [TemplateResponse(**row) for row in rows]
+
+
+@router.post("/templates", response_model=TemplateResponse)
+async def create_template(
+    account_id: UUID,
+    body: CreateTemplateRequest,
+    membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR)),
+) -> TemplateResponse:
+    """
+    Registra una plantilla ya aprobada en Meta Business Manager -- Telar no
+    la crea en Meta, solo guarda cuál usar y con qué componentes.
+    """
+    template_id = await repo.insert_message_template(
+        account_id, body.name, body.language, body.components
+    )
+    return TemplateResponse(
+        id=template_id, name=body.name, language=body.language, components=body.components
+    )
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_template(
+    account_id: UUID,
+    template_id: UUID,
+    membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR)),
+) -> None:
+    template = await repo.get_message_template(template_id)
+    if template is None or template["account_id"] != account_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Plantilla no encontrada")
+    await repo.delete_message_template(template_id)
