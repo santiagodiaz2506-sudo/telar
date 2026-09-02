@@ -19,6 +19,7 @@ from telar.agent import graph_cache
 from telar.auth.dependencies import Membership, require_role
 from telar.auth.roles import AccountRole
 from telar.core import crypto
+from telar.custom_tools.http_tool import UnsafeURLError, check_url_is_safe
 from telar.db import repositories as repo
 from telar.llm.discovery import DiscoveryError, list_models
 
@@ -61,6 +62,18 @@ class DiscoverModelsResponse(BaseModel):
     models: list[str]
 
 
+def _validate_base_url(base_url: str | None) -> None:
+    """Mismo guard SSRF que las tools HTTP y discover-models -- sin esto, un
+    administrator de cuenta podía guardar un base_url apuntando a la red
+    interna de la plataforma y usarlo en cada turno del bot de su cuenta."""
+    if base_url is None:
+        return
+    try:
+        check_url_is_safe(base_url)
+    except UnsafeURLError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"URL no permitida: {e}") from e
+
+
 async def _get_provider_or_404(account_id: UUID, provider_id: UUID) -> dict:
     provider = await repo.get_llm_provider(provider_id)
     if provider is None or provider["account_id"] != account_id:
@@ -82,6 +95,7 @@ async def create_llm_provider(
     body: CreateLlmProviderRequest,
     membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR)),
 ) -> LlmProviderResponse:
+    _validate_base_url(body.base_url)
     api_key = crypto.encrypt(body.api_key).encode() if body.api_key else None
     provider_id = await repo.insert_llm_provider(
         account_id, body.name, body.provider, body.model, body.base_url, api_key
@@ -107,6 +121,7 @@ async def update_llm_provider(
     membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR)),
 ) -> LlmProviderResponse:
     existing = await _get_provider_or_404(account_id, provider_id)
+    _validate_base_url(body.base_url)
     await repo.update_llm_provider(provider_id, body.name, body.model, body.base_url)
     if body.api_key:
         await repo.update_llm_provider_secret(provider_id, crypto.encrypt(body.api_key).encode())

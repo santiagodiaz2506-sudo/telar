@@ -81,18 +81,28 @@
   --primary-soft: #2e1712;
   --primary-soft-foreground: #ffb4a2;
 
-  --border: #262626;
-  --border-strong: #3a3a3a;
+  /* antes #262626/#3a3a3a -- casi invisibles contra las superficies
+     (ratio ~1.2/1.6). Estos valores dan a paneles, inputs y divisores
+     un borde que se nota sin dejar de ser sutil (~1.5/2.1). */
+  --border: #363636;
+  --border-strong: #4c4c4c;
   --input: #131313;
   --ring: #ff6b4a;
 
-  --destructive: #ff6b6b;
+  /* antes #ff6b6b -- a un paso de --primary (mismos R/G, ambos "coral"
+     saturado), así que un botón de eliminar y uno de acción principal
+     se leían casi igual. Este rojo se aparta claramente sin perder
+     contraste como texto ni como fondo de botón. */
+  --destructive: #f54761;
   --destructive-foreground: #0c0c0c;
   --destructive-soft: #2e1414;
 
   --status-bot: #a1a1a1;
   --status-bot-soft: #202020;
-  --status-pending: #ff6b4a;
+  /* antes idéntico a --primary -- el chip "Espera" y cualquier botón
+     primario eran el mismo color exacto. Ahora es su propio naranja,
+     a mitad de camino entre el coral de marca y el ámbar de "Asesor". */
+  --status-pending: #f59247;
   --status-pending-soft: #2e1712;
   --status-open: #e8b44a;
   --status-open-soft: #2a2113;

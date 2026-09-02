@@ -86,7 +86,7 @@ async def inbound(request: Request) -> dict[str, str] | Response:
     for msg in messages:
         if await repo.already_processed(msg.inbox_id, msg.channel_message_id):
             continue
-        dispatcher.submit(msg)
+        await dispatcher.submit(msg)
 
     return {"status": "ok"}
 
@@ -103,6 +103,7 @@ def _phone_number_id(payload: dict) -> str | None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await get_pool()
+    await dispatcher.recover_pending()
     log.info("telar listo")
     yield
     await dispatcher.drain()

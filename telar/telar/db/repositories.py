@@ -57,6 +57,63 @@ async def already_processed(inbox_id: UUID, channel_message_id: str) -> bool:
         return await cur.fetchone() is not None
 
 
+async def insert_buffered_message(msg: InboundMessage) -> None:
+    """Se llama ANTES de que el webhook responda 200 -- ver
+    worker/dispatcher.py. ON CONFLICT DO NOTHING porque Meta puede
+    reintentar el mismo webhook mientras el mensaje sigue en la ventana
+    de debounce, antes de que exista en `messages`."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO inbound_message_buffer
+                (inbox_id, contact_external_id, channel_message_id, payload)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (inbox_id, channel_message_id) DO NOTHING
+            """,
+            (
+                msg.inbox_id,
+                msg.contact.external_id,
+                msg.channel_message_id,
+                json.dumps(msg.model_dump(mode="json")),
+            ),
+        )
+
+
+async def get_buffered_messages(inbox_id: UUID, contact_external_id: str) -> list[dict]:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT id, payload FROM inbound_message_buffer "
+            "WHERE inbox_id = %s AND contact_external_id = %s ORDER BY received_at",
+            (inbox_id, contact_external_id),
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
+async def delete_buffered_messages(ids: list[UUID]) -> None:
+    if not ids:
+        return
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            "DELETE FROM inbound_message_buffer WHERE id = ANY(%s)", (ids,)
+        )
+
+
+async def list_buffered_keys() -> list[dict]:
+    """Para el barrido de recuperación al arrancar -- ver
+    worker/dispatcher.py recover_pending()."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT DISTINCT inbox_id, contact_external_id FROM inbound_message_buffer"
+        )
+        cur.row_factory = dict_row
+        return await cur.fetchall()
+
+
 async def upsert_contact(account_id: UUID, contact: ContactRef) -> UUID:
     pool = await get_pool()
     async with pool.connection() as conn:

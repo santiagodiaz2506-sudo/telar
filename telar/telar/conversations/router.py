@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from telar.auth.dependencies import Membership, require_role
@@ -132,8 +132,8 @@ async def list_conversations(
     team_id: UUID | None = None,
     assignee_id: UUID | None = None,
     q: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     membership: Membership = Depends(require_role()),
 ) -> list[ConversationResponse]:
     rows = await repo.get_conversations_for_account(
@@ -158,7 +158,7 @@ async def list_conversations(
 async def get_conversation_detail(
     account_id: UUID,
     conversation_id: UUID,
-    limit: int = 50,
+    limit: int = Query(50, ge=1, le=100),
     before: datetime | None = None,
     membership: Membership = Depends(require_role()),
 ) -> ConversationDetailResponse:
@@ -373,8 +373,8 @@ async def send_template_message(
 async def list_contacts(
     account_id: UUID,
     q: str | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     membership: Membership = Depends(require_role()),
 ) -> list[ContactResponse]:
     rows = await repo.get_contacts_for_account(account_id, q, limit, offset)

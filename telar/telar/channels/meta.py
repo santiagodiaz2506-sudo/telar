@@ -276,16 +276,22 @@ class MetaWhatsAppAdapter(ChannelAdapter):
     ) -> None:
         phone_number_id = phone_number_id or self.phone_number_id
         access_token = access_token or self.access_token
-        async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(
-                f"{self.base}/{phone_number_id}/messages",
-                json={
-                    "messaging_product": "whatsapp",
-                    "status": "read",
-                    "message_id": channel_message_id,
-                },
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
+        # Marcar como leído es un efecto secundario, no el turno del agente
+        # -- un token vacío/vencido acá no debe tumbar worker/dispatcher.py
+        # (mismo motivo que ya tiene el try/except de send(), más abajo).
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.post(
+                    f"{self.base}/{phone_number_id}/messages",
+                    json={
+                        "messaging_product": "whatsapp",
+                        "status": "read",
+                        "message_id": channel_message_id,
+                    },
+                    headers={"Authorization": f"Bearer {access_token}"},
+                )
+        except httpx.HTTPError as e:
+            log.warning("no se pudo marcar como leído %s: %s", channel_message_id, e)
 
     async def download_media(self, media: MediaRef) -> MediaRef:
         """

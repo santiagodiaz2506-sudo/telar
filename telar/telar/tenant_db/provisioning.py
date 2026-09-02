@@ -43,11 +43,20 @@ def _seed_default_roles(cur) -> None:
 
 def _pg_connect(host: str, port: int, database: str, username: str, password: str, use_ssl: bool):
     import psycopg
+    from psycopg.conninfo import make_conninfo
 
-    sslmode = "require" if use_ssl else "prefer"
-    conninfo = (
-        f"host={host} port={port} dbname={database} user={username} "
-        f"password={password} sslmode={sslmode} connect_timeout=10"
+    # make_conninfo escapa cada valor -- un f-string a mano acá es
+    # vulnerable a inyección de parámetros libpq: un valor con un espacio
+    # seguido de "otra_clave=valor" (típicamente en la password, que el
+    # propio usuario controla) puede overridear sslmode u otro parámetro.
+    conninfo = make_conninfo(
+        host=host,
+        port=port,
+        dbname=database,
+        user=username,
+        password=password,
+        sslmode="require" if use_ssl else "prefer",
+        connect_timeout=10,
     )
     return psycopg.connect(conninfo, autocommit=True)
 

@@ -10,6 +10,7 @@ import logging
 
 import httpx
 
+from telar.custom_tools.http_tool import UnsafeURLError, check_url_is_safe
 from telar.llm.registry import DEFAULT_BASE_URL
 
 log = logging.getLogger(__name__)
@@ -34,6 +35,14 @@ async def list_models(provider: str, base_url: str | None, api_key: str | None) 
     url = (base_url or DEFAULT_BASE_URL.get(provider, "")).rstrip("/")
     if not url:
         raise DiscoveryError(f"proveedor desconocido: {provider!r}")
+
+    # Mismo guard SSRF que ya protege las tools HTTP configurables (resuelve
+    # DNS, bloquea IPs privadas/loopback/link-local/metadata de nube) -- acá
+    # el host lo elige un administrator de cuenta, no un operador confiable.
+    try:
+        check_url_is_safe(url)
+    except UnsafeURLError as e:
+        raise DiscoveryError(f"URL no permitida: {e}") from e
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
