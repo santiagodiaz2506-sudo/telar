@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCheck, Hand, Lock, MessageSquareDashed, Undo2 } from 'lucide-react'
+import { CheckCheck, ChevronUp, Hand, Loader2, Lock, MessageSquareDashed, Undo2 } from 'lucide-react'
 import * as React from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -19,6 +19,7 @@ import {
   assignConversation,
   getConversationDetail,
   getMembers,
+  PAGE_SIZE,
   releaseConversation,
   resolveConversation,
   sendMessage,
@@ -26,7 +27,6 @@ import {
 import { dayKey, dayLabel, formatPhone } from '@/lib/format'
 import { isElevated } from '@/lib/roles'
 import { serviceWindow } from '@/lib/serviceWindow'
-import { useCachedConversation } from '@/lib/useCachedConversation'
 import type { MessageResponse } from '@/types/api'
 
 /** Dos mensajes seguidos del mismo autor dentro de 3 minutos se agrupan. */
@@ -42,12 +42,64 @@ export function ThreadPage() {
   const [busy, setBusy] = React.useState(false)
   const bottomRef = React.useRef<HTMLDivElement>(null)
 
+  const [olderMessages, setOlderMessages] = React.useState<MessageResponse[]>([])
+  const [loadingOlder, setLoadingOlder] = React.useState(false)
+  const [hasMoreOlder, setHasMoreOlder] = React.useState<boolean | null>(null)
+  const scrollRef = React.useRef<HTMLDivElement>(null)
+  const scrollAdjustRef = React.useRef<number | null>(null)
+
   const { data: conv, isLoading } = useQuery({
     queryKey: ['conversation', accountId, conversationId],
     queryFn: () => getConversationDetail(accountId!, conversationId!),
     enabled: !!accountId && !!conversationId,
-    refetchInterval: 5000,
+    // Igual que en InboxLayout: con historial viejo ya cargado, un refresco
+    // de la ventana reciente puede correr el límite y dejar un hueco.
+    refetchInterval: olderMessages.length === 0 ? 5000 : false,
   })
+
+  /* Cada conversación arranca su propio historial: sin esto, cambiar de hilo
+     mostraría mensajes viejos de la conversación anterior. */
+  React.useEffect(() => {
+    setOlderMessages([])
+    setHasMoreOlder(null)
+  }, [conversationId])
+
+  const allMessages = React.useMemo(
+    () => [...olderMessages, ...(conv?.messages ?? [])],
+    [olderMessages, conv],
+  )
+
+  async function loadOlderMessages() {
+    if (!accountId || !conversationId || loadingOlder) return
+    const oldest = allMessages[0]
+    if (!oldest) return
+
+    setLoadingOlder(true)
+    try {
+      const older = await getConversationDetail(accountId, conversationId, {
+        before: oldest.created_at,
+        limit: PAGE_SIZE,
+      })
+      // El contenido nuevo se inserta arriba: sin esto, la lista "salta" y
+      // se pierde de vista lo que se estaba leyendo.
+      scrollAdjustRef.current = scrollRef.current?.scrollHeight ?? null
+      setOlderMessages((prev) => [...older.messages, ...prev])
+      setHasMoreOlder(older.messages.length >= PAGE_SIZE)
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'No se pudieron cargar los mensajes anteriores')
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+
+  React.useLayoutEffect(() => {
+    const container = scrollRef.current
+    const previousHeight = scrollAdjustRef.current
+    if (container && previousHeight != null) {
+      container.scrollTop += container.scrollHeight - previousHeight
+      scrollAdjustRef.current = null
+    }
+  }, [olderMessages])
 
   const role = accountId ? roleForAccount(accountId) : null
   const canOverride = isElevated(role)
@@ -60,8 +112,6 @@ export function ThreadPage() {
     enabled: !!accountId,
     staleTime: 60_000,
   })
-
-  const summary = useCachedConversation(accountId, conversationId)
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
@@ -92,7 +142,7 @@ export function ThreadPage() {
   if (!accountId || !conversationId) return null
   if (isLoading || !conv) return <ThreadSkeleton />
 
-  const contactName = summary?.contact_name ?? formatPhone(summary?.contact_phone) ?? 'Sin nombre'
+  const contactName = conv.contact_name ?? formatPhone(conv.contact_phone) ?? 'Sin nombre'
   const isMine = conv.assignee_id === user?.id
   const canWrite = conv.status === 'open' && (isMine || canOverride)
 
@@ -103,14 +153,7 @@ export function ThreadPage() {
       : (assignee?.name ?? 'Otro asesor')
     : null
 
-  /**
-   * El backend valida la ventana en el envío; acá la anticipamos con el
-   * último mensaje entrante. `last_contact_message_at` de la lista es la
-   * fuente buena; el hilo es el respaldo cuando la conversación no está en
-   * ninguna página cargada.
-   */
-  const lastInbound = [...conv.messages].reverse().find((m) => m.sender_type === 'contact')
-  const sw = serviceWindow(summary?.last_contact_message_at ?? lastInbound?.created_at ?? null)
+  const sw = serviceWindow(conv.last_contact_message_at)
 
   async function handleSend(text: string) {
     try {
@@ -135,11 +178,11 @@ export function ThreadPage() {
     <div className="flex min-w-0 flex-1">
       <div className="flex min-w-0 flex-1 flex-col bg-background">
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface px-4">
-          <ContactAvatar seed={conv.contact_id} name={summary?.contact_name} size="md" />
+          <ContactAvatar seed={conv.contact_id} name={conv.contact_name} size="md" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm leading-tight font-semibold">{contactName}</p>
             <p className="tabular truncate font-mono text-[11px] text-muted-foreground">
-              {formatPhone(summary?.contact_phone)}
+              {formatPhone(conv.contact_phone)}
             </p>
           </div>
 
@@ -205,8 +248,8 @@ export function ThreadPage() {
           </div>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          {conv.messages.length === 0 ? (
+        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+          {allMessages.length === 0 ? (
             <EmptyState
               icon={MessageSquareDashed}
               title="Todavía no hay mensajes"
@@ -214,15 +257,25 @@ export function ThreadPage() {
             />
           ) : (
             <div className="mx-auto max-w-3xl">
-              {/* La API devuelve como máximo los últimos 50 mensajes y no
-                  expone un parámetro para pedir más atrás. */}
-              {conv.messages.length >= 50 && (
-                <p className="mb-4 rounded-lg border border-dashed border-border px-3 py-2 text-center text-[11.5px] text-muted-foreground">
-                  Se muestran los últimos 50 mensajes. La API todavía no permite traer los
-                  anteriores.
+              {(hasMoreOlder ?? conv.messages.length >= PAGE_SIZE) && (
+                <div className="mb-4 flex justify-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={loadingOlder}
+                    onClick={loadOlderMessages}
+                  >
+                    {loadingOlder ? <Loader2 className="animate-spin" /> : <ChevronUp />}
+                    {loadingOlder ? 'Cargando…' : 'Cargar mensajes anteriores'}
+                  </Button>
+                </div>
+              )}
+              {hasMoreOlder === false && (
+                <p className="mb-4 text-center text-[11px] text-muted-foreground">
+                  Ya viste todo el historial de esta conversación.
                 </p>
               )}
-              {groupMessages(conv.messages).map((entry) =>
+              {groupMessages(allMessages).map((entry) =>
                 entry.kind === 'day' ? (
                   <DaySeparator key={`day-${entry.key}`} label={entry.label} />
                 ) : (
@@ -255,9 +308,10 @@ export function ThreadPage() {
       <ContactPanel
         conversation={conv}
         contactName={contactName}
-        contactPhone={summary?.contact_phone ?? null}
+        contactPhone={conv.contact_phone}
         assigneeName={assigneeName}
         serviceWindow={sw}
+        messagesLoaded={allMessages.length}
       />
     </div>
   )

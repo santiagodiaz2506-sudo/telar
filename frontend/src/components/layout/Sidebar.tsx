@@ -176,7 +176,7 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
       )}
 
       {/* Navegación */}
-      <nav className="mt-3 flex flex-col gap-0.5" aria-label="Secciones">
+      <nav className={cn('mt-3 flex flex-col', collapsed ? 'gap-1.5' : 'gap-0.5')} aria-label="Secciones">
         {items.map((item) => (
           <NavItemLink key={item.to} item={item} collapsed={collapsed} />
         ))}

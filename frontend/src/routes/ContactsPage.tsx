@@ -27,7 +27,7 @@ export function ContactsPage() {
     queryFn: ({ pageParam }) => getContacts(accountId!, { offset: pageParam }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) =>
-      lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
+      (lastPage?.length ?? 0) < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
     enabled: !!accountId,
   })
 
@@ -54,6 +54,7 @@ export function ContactsPage() {
       (c) =>
         c.name?.toLowerCase().includes(q) ||
         c.phone?.replace(/\D/g, '').includes(q.replace(/\D/g, '')) ||
+        c.email?.toLowerCase().includes(q) ||
         c.external_id.includes(q),
     )
   }, [contacts, query])
@@ -127,6 +128,7 @@ export function ContactsPage() {
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="pl-4">Contacto</TableHead>
                   <TableHead>Teléfono</TableHead>
+                  <TableHead>Email</TableHead>
                   <TableHead>wa_id</TableHead>
                   <TableHead className="w-px pr-4" />
                 </TableRow>
@@ -144,6 +146,9 @@ export function ContactsPage() {
                       </TableCell>
                       <TableCell className="tabular font-mono text-[12.5px] text-muted-foreground">
                         {formatPhone(c.phone)}
+                      </TableCell>
+                      <TableCell className="text-[12.5px] text-muted-foreground">
+                        {c.email ?? '—'}
                       </TableCell>
                       <TableCell className="font-mono text-[12.5px] text-muted-foreground">
                         {c.external_id}

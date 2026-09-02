@@ -99,9 +99,15 @@ export function getConversations(
   return apiFetch<ConversationResponse[]>(`/accounts/${accountId}/conversations?${qs}`)
 }
 
-export function getConversationDetail(accountId: string, conversationId: string) {
+export function getConversationDetail(
+  accountId: string,
+  conversationId: string,
+  { limit = PAGE_SIZE, before }: { limit?: number; before?: string } = {},
+) {
+  const qs = new URLSearchParams({ limit: String(limit) })
+  if (before) qs.set('before', before)
   return apiFetch<ConversationDetailResponse>(
-    `/accounts/${accountId}/conversations/${conversationId}`,
+    `/accounts/${accountId}/conversations/${conversationId}?${qs}`,
   )
 }
 

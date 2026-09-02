@@ -14,12 +14,15 @@ export function ContactPanel({
   contactPhone,
   assigneeName,
   serviceWindow: sw,
+  messagesLoaded,
 }: {
   conversation: ConversationDetailResponse
   contactName: string
   contactPhone: string | null
   assigneeName?: string | null
   serviceWindow: ServiceWindow
+  /** Incluye el historial viejo ya traído con "Cargar mensajes anteriores". */
+  messagesLoaded: number
 }) {
   return (
     <aside
@@ -69,7 +72,7 @@ export function ContactPanel({
         <Field label="Asesor asignado" value={assigneeName ?? 'Nadie'} />
         <Field label="ID de contacto" value={conversation.contact_id} mono copyable />
         <Field label="ID de conversación" value={conversation.id} mono copyable />
-        <Field label="Mensajes en el hilo" value={String(conversation.messages.length)} />
+        <Field label="Mensajes cargados" value={String(messagesLoaded)} />
       </dl>
     </aside>
   )

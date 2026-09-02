@@ -1,4 +1,4 @@
-import { Bot, Info } from 'lucide-react'
+import { AlertTriangle, Bot, Check, CheckCheck, Clock, Info } from 'lucide-react'
 
 import { clockTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -73,15 +73,41 @@ export function MessageBubble({ message, grouped = false }: BubbleProps) {
             <span className="text-muted-foreground italic">[{message.type}]</span>
           )}
         </div>
-        <time
-          dateTime={message.created_at}
-          className="tabular shrink-0 pb-1 text-[11px] text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+        <div
+          className={cn(
+            'flex shrink-0 items-center gap-1 pb-1 text-[11px] text-muted-foreground transition-opacity',
+            message.delivery_status === 'failed'
+              ? 'opacity-100'
+              : 'opacity-0 group-hover:opacity-100',
+          )}
         >
-          {clockTime(message.created_at)}
-        </time>
+          <time dateTime={message.created_at} className="tabular">
+            {clockTime(message.created_at)}
+          </time>
+          {!fromContact && <DeliveryIndicator status={message.delivery_status} />}
+        </div>
       </div>
     </div>
   )
+}
+
+/**
+ * Solo tiene sentido para mensajes salientes (bot/asesor): un mensaje del
+ * contacto siempre queda 'delivered' en la base apenas llega por webhook.
+ */
+function DeliveryIndicator({ status }: { status: string }) {
+  switch (status) {
+    case 'read':
+      return <CheckCheck aria-label="Leído" className="size-3.5 text-primary" />
+    case 'delivered':
+      return <CheckCheck aria-label="Entregado" className="size-3.5" />
+    case 'sent':
+      return <Check aria-label="Enviado" className="size-3.5" />
+    case 'failed':
+      return <AlertTriangle aria-label="No se pudo enviar" className="size-3.5 text-destructive" />
+    default:
+      return <Clock aria-label="Enviando" className="size-3.5" />
+  }
 }
 
 export function DaySeparator({ label }: { label: string }) {

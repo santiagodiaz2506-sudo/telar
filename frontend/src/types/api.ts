@@ -61,6 +61,9 @@ export interface MessageResponse {
   sender_id: string | null
   type: string
   content: string | null
+  /** 'pending' | 'sent' | 'delivered' | 'read' | 'failed' -- suelto porque el
+   *  backend todavía puede sumar valores (webhooks de estado de Meta). */
+  delivery_status: string
   created_at: string
 }
 
@@ -69,6 +72,9 @@ export interface ConversationDetailResponse {
   status: ConversationStatusValue
   assignee_id: string | null
   contact_id: string
+  contact_name: string | null
+  contact_phone: string | null
+  last_contact_message_at: string | null
   messages: MessageResponse[]
 }
 
@@ -77,6 +83,7 @@ export interface ContactResponse {
   external_id: string
   name: string | null
   phone: string | null
+  email: string | null
 }
 
 export interface GraphNode {

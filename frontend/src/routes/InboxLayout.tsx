@@ -48,14 +48,14 @@ export function InboxLayout() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['conversations', accountId, filter],
+    queryKey: ['conversations', accountId, 'list', filter],
     queryFn: ({ pageParam }) =>
       getConversations(accountId!, filter === 'all' ? undefined : filter, {
         offset: pageParam,
       }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) =>
-      lastPage.length < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
+      (lastPage?.length ?? 0) < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
     enabled: !!accountId,
     // Un refresco de fondo vuelve a pedir TODAS las páginas cargadas. Mientras
     // se está en la primera vale la pena; después se corta y queda el botón.
