@@ -51,6 +51,7 @@ export interface ConversationResponse {
   id: string
   status: ConversationStatusValue
   assignee_id: string | null
+  team_id: string | null
   contact_id: string
   contact_name: string | null
   contact_phone: string | null

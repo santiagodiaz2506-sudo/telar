@@ -118,11 +118,17 @@ export function removeTeamMember(accountId: string, teamId: string, userId: stri
 export function getConversations(
   accountId: string,
   status?: ConversationStatusValue,
-  { limit = PAGE_SIZE, offset = 0, q }: { limit?: number; offset?: number; q?: string } = {},
+  {
+    limit = PAGE_SIZE,
+    offset = 0,
+    q,
+    teamId,
+  }: { limit?: number; offset?: number; q?: string; teamId?: string } = {},
 ) {
   const qs = new URLSearchParams({ limit: String(limit), offset: String(offset) })
   if (status) qs.set('status_filter', status)
   if (q) qs.set('q', q)
+  if (teamId) qs.set('team_id', teamId)
   return apiFetch<ConversationResponse[]>(`/accounts/${accountId}/conversations?${qs}`)
 }
 

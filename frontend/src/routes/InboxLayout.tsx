@@ -7,10 +7,11 @@ import { EmptyState } from '@/components/EmptyState'
 import { ConversationListItem } from '@/components/inbox/ConversationListItem'
 import { StatusDot } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/lib/auth'
-import { getConversations, getStats, PAGE_SIZE } from '@/lib/endpoints'
+import { getConversations, getStats, getTeams, PAGE_SIZE } from '@/lib/endpoints'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { cn } from '@/lib/utils'
 import type { ConversationStatusValue } from '@/types/api'
@@ -33,6 +34,7 @@ export function InboxLayout() {
   const { user } = useAuth()
   const navigate = useNavigate()
   const [filter, setFilter] = React.useState<Filter>('all')
+  const [teamId, setTeamId] = React.useState('')
   const [query, setQuery] = React.useState('')
   const debouncedQuery = useDebouncedValue(query.trim(), 300)
   const searchRef = React.useRef<HTMLInputElement>(null)
@@ -50,11 +52,12 @@ export function InboxLayout() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['conversations', accountId, 'list', filter, debouncedQuery],
+    queryKey: ['conversations', accountId, 'list', filter, teamId, debouncedQuery],
     queryFn: ({ pageParam }) =>
       getConversations(accountId!, filter === 'all' ? undefined : filter, {
         offset: pageParam,
         q: debouncedQuery || undefined,
+        teamId: teamId || undefined,
       }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) =>
@@ -72,6 +75,12 @@ export function InboxLayout() {
     queryFn: () => getStats(accountId!),
     enabled: !!accountId,
     refetchInterval: 8000,
+  })
+
+  const { data: teams } = useQuery({
+    queryKey: ['teams', accountId],
+    queryFn: () => getTeams(accountId!),
+    enabled: !!accountId,
   })
 
   const counts: Record<Filter, number | undefined> = {
@@ -209,6 +218,28 @@ export function InboxLayout() {
             )
           })}
         </div>
+
+        {/* Filtro por equipo */}
+        {teams && teams.length > 0 && (
+          <div className="flex items-center gap-2 px-3 pb-2.5">
+            <label htmlFor="team-filter" className="text-[11.5px] font-medium text-muted-foreground">
+              Equipo
+            </label>
+            <Select
+              id="team-filter"
+              className="h-7 w-auto text-[11.5px]"
+              value={teamId}
+              onChange={(e) => setTeamId(e.target.value)}
+            >
+              <option value="">Todos</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+        )}
 
         {/* Lista */}
         <div className="min-h-0 flex-1 overflow-y-auto border-t border-border">
