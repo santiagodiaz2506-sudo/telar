@@ -33,7 +33,7 @@ import type { ToolAdminResponse, ToolKind } from '@/types/api'
 
 const CONFIG_PLACEHOLDER: Record<ToolKind, string> = {
   http: '{\n  "url": "https://api.tuempresa.com/pedidos",\n  "method": "GET",\n  "timeout_seconds": 10\n}',
-  sql: '{\n  "query": "SELECT * FROM pedidos WHERE id = $1"\n}',
+  sql: '{\n  "query": "SELECT * FROM pedidos WHERE id = %(order_id)s"\n}',
   document: '', // document no usa este campo -- ver DOCUMENT_TEXT_PLACEHOLDER
 }
 
@@ -324,7 +324,7 @@ function CreateToolDialog({
     },
     onSuccess: () => {
       toast.success('Herramienta creada', {
-        description: 'Hace falta reiniciar la API para que la cuenta la vea.',
+        description: 'Ya está disponible para el agente.',
       })
       queryClient.invalidateQueries({ queryKey: ['tools', accountId] })
       reset()
@@ -551,7 +551,7 @@ function EditToolDialog({
     },
     onSuccess: () => {
       toast.success('Herramienta actualizada', {
-        description: 'Hace falta reiniciar la API para que el cambio surta efecto.',
+        description: 'El cambio ya está disponible para el agente.',
       })
       queryClient.invalidateQueries({ queryKey: ['tools', accountId] })
       onOpenChange(false)

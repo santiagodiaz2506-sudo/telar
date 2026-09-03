@@ -32,7 +32,7 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/lib/auth'
 import { getAccounts, getStats } from '@/lib/endpoints'
-import { ROLE_LABEL } from '@/lib/roles'
+import { isAdmin, ROLE_LABEL } from '@/lib/roles'
 import { cn } from '@/lib/utils'
 
 const COLLAPSE_KEY = 'telar-sidebar-collapsed'
@@ -66,7 +66,6 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
     })
   }
 
-  const canEditBot = role === 'administrator' || role === 'superadmin'
   const currentAccount = accounts?.find((a) => a.id === accountId)
 
   const items: NavItem[] = [
@@ -78,7 +77,7 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
     },
     { to: `/accounts/${accountId}/contacts`, label: 'Contactos', icon: Users },
     { to: `/accounts/${accountId}/team`, label: 'Equipo', icon: UsersRound },
-    ...(canEditBot
+    ...(isAdmin(role)
       ? [
           { to: `/accounts/${accountId}/bot`, label: 'Hilos conversacionales', icon: Workflow },
           { to: `/accounts/${accountId}/settings`, label: 'Configuración', icon: Settings },
