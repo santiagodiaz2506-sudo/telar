@@ -12,6 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { ApiError } from '@/lib/api'
@@ -19,9 +20,8 @@ import { getTemplates, sendTemplateMessage } from '@/lib/endpoints'
 
 /**
  * Fuera de la ventana de 24h, Meta solo deja iniciar con una plantilla ya
- * aprobada. El backend todavía no aplica los {{1}}, {{2}}... de `params`
- * (SendTemplateRequest los acepta pero send_template_message no los usa),
- * así que por ahora se manda la plantilla tal como está registrada.
+ * aprobada. Si la plantilla tiene variables ({{1}}, {{2}}...), se piden acá
+ * y el backend las reemplaza antes de mandarla (send_template_message).
  */
 export function SendTemplateDialog({
   accountId,
@@ -37,6 +37,7 @@ export function SendTemplateDialog({
   onSent: () => void
 }) {
   const [templateId, setTemplateId] = React.useState('')
+  const [params, setParams] = React.useState<Record<string, string>>({})
 
   const { data: templates, isLoading } = useQuery({
     queryKey: ['templates', accountId],
@@ -45,13 +46,23 @@ export function SendTemplateDialog({
   })
 
   const selected = templates?.find((t) => t.id === templateId)
-  const hasVariables = selected?.components.some((c) => c.text?.includes('{{'))
+  const placeholderNumbers = React.useMemo(() => {
+    if (!selected) return []
+    const numbers = new Set<string>()
+    for (const component of selected.components) {
+      for (const match of (component.text ?? '').matchAll(/\{\{(\d+)\}\}/g)) {
+        numbers.add(match[1])
+      }
+    }
+    return Array.from(numbers).sort((a, b) => Number(a) - Number(b))
+  }, [selected])
 
   const send = useMutation({
-    mutationFn: () => sendTemplateMessage(accountId, conversationId, templateId),
+    mutationFn: () => sendTemplateMessage(accountId, conversationId, templateId, params),
     onSuccess: () => {
       toast.success('Plantilla enviada')
       setTemplateId('')
+      setParams({})
       onOpenChange(false)
       onSent()
     },
@@ -63,7 +74,10 @@ export function SendTemplateDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!next) setTemplateId('')
+        if (!next) {
+          setTemplateId('')
+          setParams({})
+        }
         onOpenChange(next)
       }}
     >
@@ -89,7 +103,10 @@ export function SendTemplateDialog({
               id="template-picker"
               required
               value={templateId}
-              onChange={(e) => setTemplateId(e.target.value)}
+              onChange={(e) => {
+                setTemplateId(e.target.value)
+                setParams({})
+              }}
             >
               <option value="">Elegí una plantilla…</option>
               {templates?.map((t) => (
@@ -101,8 +118,8 @@ export function SendTemplateDialog({
             {isLoading && <p className="text-xs text-muted-foreground">Cargando…</p>}
             {!isLoading && templates?.length === 0 && (
               <p className="text-xs text-muted-foreground">
-                Todavía no hay plantillas registradas para esta cuenta. Se registran con{' '}
-                <code className="font-mono">POST /accounts/&#123;id&#125;/templates</code>.
+                Todavía no hay plantillas registradas para esta cuenta. Un administrador puede
+                registrarlas en Configuración → Plantillas.
               </p>
             )}
           </div>
@@ -117,12 +134,24 @@ export function SendTemplateDialog({
                   {c.text ?? `[${c.type.toLowerCase()}]`}
                 </p>
               ))}
-              {hasVariables && (
-                <p className="mt-2 text-[11.5px] text-status-pending">
-                  Tiene variables ({'{{1}}'}, …) sin completar: Telar todavía no permite
-                  reemplazarlas desde acá, se manda con los placeholders tal cual.
-                </p>
-              )}
+            </div>
+          )}
+
+          {placeholderNumbers.length > 0 && (
+            <div className="flex flex-col gap-3">
+              {placeholderNumbers.map((n) => (
+                <div key={n} className="flex flex-col gap-1.5">
+                  <Label htmlFor={`template-param-${n}`}>{`Variable {{${n}}}`}</Label>
+                  <Input
+                    id={`template-param-${n}`}
+                    required
+                    value={params[n] ?? ''}
+                    onChange={(e) =>
+                      setParams((prev) => ({ ...prev, [n]: e.target.value }))
+                    }
+                  />
+                </div>
+              ))}
             </div>
           )}
 

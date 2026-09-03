@@ -25,6 +25,7 @@ import type {
   TestChatResponse,
   TeamMemberResponse,
   TeamResponse,
+  TemplateComponent,
   TemplateResponse,
   ToolAdminResponse,
   ToolKind,
@@ -196,6 +197,20 @@ export function sendTemplateMessage(
     `/accounts/${accountId}/conversations/${conversationId}/messages/template`,
     { method: 'POST', body: JSON.stringify({ template_id: templateId, params }) },
   )
+}
+
+export function createTemplate(
+  accountId: string,
+  body: { name: string; language: string; components: TemplateComponent[] },
+) {
+  return apiFetch<TemplateResponse>(`/accounts/${accountId}/templates`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteTemplate(accountId: string, templateId: string) {
+  return apiFetch<void>(`/accounts/${accountId}/templates/${templateId}`, { method: 'DELETE' })
 }
 
 // --------------------------------------------------------------------------

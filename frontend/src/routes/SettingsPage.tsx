@@ -7,12 +7,13 @@ import { DatabaseTab } from '@/components/settings/DatabaseTab'
 import { InboxesTab } from '@/components/settings/InboxesTab'
 import { KnowledgeBasesTab } from '@/components/settings/KnowledgeBasesTab'
 import { LlmProvidersTab } from '@/components/settings/LlmProvidersTab'
+import { TemplatesTab } from '@/components/settings/TemplatesTab'
 import { ToolsTab } from '@/components/settings/ToolsTab'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAuth } from '@/lib/auth'
 import { isAdmin } from '@/lib/roles'
 
-type SettingsTab = 'inboxes' | 'tools' | 'knowledge-bases' | 'llm-provider' | 'database'
+type SettingsTab = 'inboxes' | 'tools' | 'templates' | 'knowledge-bases' | 'llm-provider' | 'database'
 
 export function SettingsPage() {
   const { accountId } = useParams<{ accountId: string }>()
@@ -27,7 +28,7 @@ export function SettingsPage() {
       <EmptyState
         icon={ShieldAlert}
         title="Sin acceso"
-        description="La configuración de la cuenta -- inboxes, herramientas y bases de conocimiento -- es solo para administradores."
+        description="La configuración de la cuenta -- inboxes, herramientas, plantillas y bases de conocimiento -- es solo para administradores."
         className="flex-1"
       />
     )
@@ -41,6 +42,7 @@ export function SettingsPage() {
           <TabsList>
             <TabsTrigger value="inboxes">Inboxes</TabsTrigger>
             <TabsTrigger value="tools">Herramientas</TabsTrigger>
+            <TabsTrigger value="templates">Plantillas</TabsTrigger>
             <TabsTrigger value="knowledge-bases">Bases de conocimiento</TabsTrigger>
             <TabsTrigger value="llm-provider">Proveedor LLM</TabsTrigger>
             <TabsTrigger value="database">Base de datos</TabsTrigger>
@@ -52,6 +54,7 @@ export function SettingsPage() {
         <div className="mx-auto max-w-3xl">
           {tab === 'inboxes' && <InboxesTab accountId={accountId} />}
           {tab === 'tools' && <ToolsTab accountId={accountId} />}
+          {tab === 'templates' && <TemplatesTab accountId={accountId} />}
           {tab === 'knowledge-bases' && <KnowledgeBasesTab accountId={accountId} />}
           {tab === 'llm-provider' && <LlmProvidersTab accountId={accountId} />}
           {tab === 'database' && <DatabaseTab accountId={accountId} />}
