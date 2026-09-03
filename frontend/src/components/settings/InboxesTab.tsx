@@ -1,9 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { KeyRound, Pencil, Plus, RadioTower } from 'lucide-react'
 import * as React from 'react'
-import { toast } from 'sonner'
 
 import { EmptyState } from '@/components/EmptyState'
+import {
+  CreateInboxForm,
+  EditInboxForm,
+  RotateCredentialsForm,
+} from '@/components/InboxConnectionForm'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,9 +17,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -25,14 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ApiError } from '@/lib/api'
-import {
-  createInbox,
-  getInboxes,
-  getTeams,
-  rotateInboxCredentials,
-  updateInbox,
-} from '@/lib/endpoints'
+import { getInboxes, getTeams } from '@/lib/endpoints'
 import { shortTimestamp } from '@/lib/format'
 import type { InboxResponse } from '@/types/api'
 
@@ -164,29 +158,6 @@ export function InboxesTab({ accountId }: { accountId: string }) {
   )
 }
 
-function TeamSelect({
-  accountId,
-  value,
-  onChange,
-}: {
-  accountId: string
-  value: string
-  onChange: (value: string) => void
-}) {
-  const { data: teams } = useQuery({ queryKey: ['teams', accountId], queryFn: () => getTeams(accountId) })
-
-  return (
-    <Select value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="">Sin equipo por defecto</option>
-      {teams?.map((t) => (
-        <option key={t.id} value={t.id}>
-          {t.name}
-        </option>
-      ))}
-    </Select>
-  )
-}
-
 function CreateInboxDialog({
   accountId,
   open,
@@ -196,48 +167,8 @@ function CreateInboxDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const queryClient = useQueryClient()
-  const [name, setName] = React.useState('')
-  const [phoneNumberId, setPhoneNumberId] = React.useState('')
-  const [wabaId, setWabaId] = React.useState('')
-  const [accessToken, setAccessToken] = React.useState('')
-  const [defaultTeamId, setDefaultTeamId] = React.useState('')
-  const [error, setError] = React.useState<string | null>(null)
-
-  function reset() {
-    setName('')
-    setPhoneNumberId('')
-    setWabaId('')
-    setAccessToken('')
-    setDefaultTeamId('')
-    setError(null)
-  }
-
-  const create = useMutation({
-    mutationFn: () =>
-      createInbox(accountId, {
-        name: name.trim(),
-        phone_number_id: phoneNumberId.trim(),
-        waba_id: wabaId.trim() || undefined,
-        access_token: accessToken.trim(),
-        default_team_id: defaultTeamId || undefined,
-      }),
-    onSuccess: () => {
-      toast.success('Inbox creado')
-      queryClient.invalidateQueries({ queryKey: ['inboxes', accountId] })
-      reset()
-      onOpenChange(false)
-    },
-    onError: (e) => setError(e instanceof ApiError ? e.message : 'No se pudo crear el inbox'),
-  })
-
-  function handleOpenChange(next: boolean) {
-    if (!next) reset()
-    onOpenChange(next)
-  }
-
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Nuevo inbox</DialogTitle>
@@ -245,82 +176,22 @@ function CreateInboxDialog({
             El access token se cifra antes de guardarse; no vuelve a mostrarse tal cual.
           </DialogDescription>
         </DialogHeader>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            setError(null)
-            create.mutate()
-          }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="inbox-name">Nombre</Label>
-            <Input
-              id="inbox-name"
-              required
-              autoFocus
-              placeholder="Principal"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="inbox-phone-id">phone_number_id</Label>
-            <Input
-              id="inbox-phone-id"
-              required
-              className="font-mono"
-              value={phoneNumberId}
-              onChange={(e) => setPhoneNumberId(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="inbox-waba-id">waba_id (opcional)</Label>
-            <Input
-              id="inbox-waba-id"
-              className="font-mono"
-              value={wabaId}
-              onChange={(e) => setWabaId(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="inbox-token">Access token de Meta</Label>
-            <Input
-              id="inbox-token"
-              required
-              type="password"
-              className="font-mono"
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="inbox-team">Equipo por defecto</Label>
-            <TeamSelect accountId={accountId} value={defaultTeamId} onChange={setDefaultTeamId} />
-            <p className="text-xs text-muted-foreground">
-              A qué equipo cae el traspaso a humano si nadie lo pide desde el bot.
-            </p>
-          </div>
-
-          {error && (
-            <p role="alert" className="rounded-md bg-destructive-soft px-3 py-2.5 text-[13px] text-destructive">
-              {error}
-            </p>
+        <CreateInboxForm
+          accountId={accountId}
+          open={open}
+          successMessage="Inbox creado"
+          onSuccess={() => onOpenChange(false)}
+          renderActions={({ pending, canSubmit }) => (
+            <DialogFooter>
+              <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" size="sm" disabled={pending || !canSubmit}>
+                Crear
+              </Button>
+            </DialogFooter>
           )}
-
-          <DialogFooter>
-            <Button type="button" variant="ghost" size="sm" onClick={() => handleOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={create.isPending || !name.trim() || !phoneNumberId.trim() || !accessToken.trim()}
-            >
-              Crear
-            </Button>
-          </DialogFooter>
-        </form>
+        />
       </DialogContent>
     </Dialog>
   )
@@ -335,31 +206,6 @@ function EditInboxDialog({
   inbox: InboxResponse | null
   onOpenChange: (open: boolean) => void
 }) {
-  const queryClient = useQueryClient()
-  const [name, setName] = React.useState('')
-  const [defaultTeamId, setDefaultTeamId] = React.useState('')
-
-  React.useEffect(() => {
-    if (inbox) {
-      setName(inbox.name)
-      setDefaultTeamId(inbox.default_team_id ?? '')
-    }
-  }, [inbox])
-
-  const update = useMutation({
-    mutationFn: () =>
-      updateInbox(accountId, inbox!.id, {
-        name: name.trim(),
-        default_team_id: defaultTeamId || null,
-      }),
-    onSuccess: () => {
-      toast.success('Inbox actualizado')
-      queryClient.invalidateQueries({ queryKey: ['inboxes', accountId] })
-      onOpenChange(false)
-    },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo actualizar'),
-  })
-
   return (
     <Dialog open={!!inbox} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -367,36 +213,24 @@ function EditInboxDialog({
           <DialogTitle>Editar {inbox?.name}</DialogTitle>
           <DialogDescription>El número y el token no se tocan acá.</DialogDescription>
         </DialogHeader>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            update.mutate()
-          }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-inbox-name">Nombre</Label>
-            <Input
-              id="edit-inbox-name"
-              required
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-inbox-team">Equipo por defecto</Label>
-            <TeamSelect accountId={accountId} value={defaultTeamId} onChange={setDefaultTeamId} />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button type="submit" size="sm" disabled={update.isPending || !name.trim()}>
-              Guardar
-            </Button>
-          </DialogFooter>
-        </form>
+        {inbox && (
+          <EditInboxForm
+            accountId={accountId}
+            inbox={inbox}
+            successMessage="Inbox actualizado"
+            onSuccess={() => onOpenChange(false)}
+            renderActions={({ pending, canSubmit }) => (
+              <DialogFooter>
+                <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" size="sm" disabled={pending || !canSubmit}>
+                  Guardar
+                </Button>
+              </DialogFooter>
+            )}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )
@@ -411,34 +245,6 @@ function RotateCredentialsDialog({
   inbox: InboxResponse | null
   onOpenChange: (open: boolean) => void
 }) {
-  const queryClient = useQueryClient()
-  const [phoneNumberId, setPhoneNumberId] = React.useState('')
-  const [wabaId, setWabaId] = React.useState('')
-  const [accessToken, setAccessToken] = React.useState('')
-
-  React.useEffect(() => {
-    if (inbox) {
-      setPhoneNumberId(inbox.phone_number_id ?? '')
-      setWabaId(inbox.waba_id ?? '')
-      setAccessToken('')
-    }
-  }, [inbox])
-
-  const rotate = useMutation({
-    mutationFn: () =>
-      rotateInboxCredentials(accountId, inbox!.id, {
-        phone_number_id: phoneNumberId.trim(),
-        waba_id: wabaId.trim() || undefined,
-        access_token: accessToken.trim(),
-      }),
-    onSuccess: () => {
-      toast.success('Credenciales actualizadas')
-      queryClient.invalidateQueries({ queryKey: ['inboxes', accountId] })
-      onOpenChange(false)
-    },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo rotar credenciales'),
-  })
-
   return (
     <Dialog open={!!inbox} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -448,58 +254,23 @@ function RotateCredentialsDialog({
             Reemplaza el número, el waba_id y el token juntos -- no es un ajuste parcial.
           </DialogDescription>
         </DialogHeader>
-        <form
-          className="flex flex-col gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            rotate.mutate()
-          }}
-        >
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rotate-phone-id">phone_number_id</Label>
-            <Input
-              id="rotate-phone-id"
-              required
-              autoFocus
-              className="font-mono"
-              value={phoneNumberId}
-              onChange={(e) => setPhoneNumberId(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rotate-waba-id">waba_id (opcional)</Label>
-            <Input
-              id="rotate-waba-id"
-              className="font-mono"
-              value={wabaId}
-              onChange={(e) => setWabaId(e.target.value)}
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rotate-token">Access token nuevo</Label>
-            <Input
-              id="rotate-token"
-              required
-              type="password"
-              className="font-mono"
-              placeholder="El token vigente no se muestra"
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-            />
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-              Cancelar
-            </Button>
-            <Button
-              type="submit"
-              size="sm"
-              disabled={rotate.isPending || !phoneNumberId.trim() || !accessToken.trim()}
-            >
-              Rotar
-            </Button>
-          </DialogFooter>
-        </form>
+        {inbox && (
+          <RotateCredentialsForm
+            accountId={accountId}
+            inbox={inbox}
+            onSuccess={() => onOpenChange(false)}
+            renderActions={({ pending, canSubmit }) => (
+              <DialogFooter>
+                <Button type="button" variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" size="sm" disabled={pending || !canSubmit}>
+                  Rotar
+                </Button>
+              </DialogFooter>
+            )}
+          />
+        )}
       </DialogContent>
     </Dialog>
   )
