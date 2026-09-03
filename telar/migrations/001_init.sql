@@ -203,7 +203,7 @@ CREATE TABLE tools (
     account_id  uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     name        text NOT NULL,
     description text NOT NULL,
-    kind        text NOT NULL,      -- http, sql, kb, handoff
+    kind        text NOT NULL,      -- http, sql, document
     config      jsonb NOT NULL DEFAULT '{}',
     schema      jsonb NOT NULL DEFAULT '{}',
     UNIQUE (account_id, name)

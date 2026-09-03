@@ -15,15 +15,10 @@ from telar.auth.security import (
     verify_password,
 )
 from telar.config import settings
-from telar.core.ratelimit import SlidingWindowLimiter
+from telar.core import ratelimit
 from telar.db import repositories as repo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-
-_login_limiter = SlidingWindowLimiter(
-    max_events=settings().login_rate_limit_attempts,
-    window_seconds=settings().login_rate_limit_window_seconds,
-)
 
 _INVALID_CREDENTIALS = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED, detail="Credenciales inválidas"
@@ -62,7 +57,12 @@ class ChangePasswordRequest(BaseModel):
 async def login(body: LoginRequest, request: Request) -> TokenResponse:
     # Rate limit por IP: protege contra fuerza bruta sobre el password.
     client_ip = request.client.host if request.client else "desconocido"
-    if not _login_limiter.allow(client_ip):
+    allowed = await ratelimit.allow(
+        f"login:{client_ip}",
+        settings().login_rate_limit_attempts,
+        settings().login_rate_limit_window_seconds,
+    )
+    if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Demasiados intentos, esperá unos minutos.",

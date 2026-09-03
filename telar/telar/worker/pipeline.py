@@ -37,6 +37,20 @@ class Pipeline:
         checkpointer = await get_checkpointer()
         return await graph_cache.get_or_build(account_id, checkpointer)
 
+    async def handle_rate_limited(self, msg: InboundMessage) -> None:
+        """
+        Un contacto en ráfaga por encima del límite no debe llegar al
+        agente, pero tampoco debe desaparecer sin dejar rastro -- se
+        persiste igual (visible en la bandeja para que un humano lo note)
+        sin tocar la máquina de estados ni invocar el grafo.
+        """
+        contact_id = await repo.upsert_contact(msg.account_id, msg.contact)
+        default_team_id = await repo.get_inbox_default_team(msg.inbox_id)
+        conv = await repo.get_or_create_conversation(
+            msg.account_id, msg.inbox_id, contact_id, default_team_id=default_team_id,
+        )
+        await repo.save_inbound_rate_limited(msg, conv.id)
+
     async def handle(self, batch: list[InboundMessage]) -> None:
         first = batch[0]
 
@@ -46,7 +60,6 @@ class Pipeline:
             first.account_id,
             first.inbox_id,
             contact_id,
-            bot_id=None,
             default_team_id=default_team_id,
         )
 

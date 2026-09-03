@@ -74,7 +74,7 @@ async def create_tool(
     tool_id = await repo.insert_tool(
         account_id, name, description, kind, config, encrypt_secret(secret), schema
     )
-    graph_cache.invalidate(account_id)
+    await graph_cache.invalidate(account_id)
     return tool_id
 
 
@@ -94,9 +94,9 @@ async def update_tool(
     await repo.update_tool(tool_id, name, description, config, schema, enabled)
     if secret is not None:
         await repo.update_tool_secret(tool_id, encrypt_secret(secret))
-    graph_cache.invalidate(account_id)
+    await graph_cache.invalidate(account_id)
 
 
 async def delete_tool(account_id: UUID, tool_id: UUID) -> None:
     await repo.delete_tool(tool_id)
-    graph_cache.invalidate(account_id)
+    await graph_cache.invalidate(account_id)

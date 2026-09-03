@@ -53,7 +53,6 @@ class Conversation:
     status: ConversationStatus
     assignee_id: UUID | None = None
     team_id: UUID | None = None
-    bot_id: UUID | None = None
     last_contact_message_at: datetime | None = None
     resolved_at: datetime | None = None
 

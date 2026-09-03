@@ -27,7 +27,7 @@ async def resolve_inbox(phone_number_id: str) -> dict | None:
     pool = await get_pool()
     async with pool.connection() as conn:
         cur = await conn.execute(
-            "SELECT id, account_id, bot_id, default_team_id "
+            "SELECT id, account_id, default_team_id "
             "FROM inboxes WHERE phone_number_id = %s",
             (phone_number_id,),
         )
@@ -135,7 +135,6 @@ async def get_or_create_conversation(
     account_id: UUID,
     inbox_id: UUID,
     contact_id: UUID,
-    bot_id: UUID | None,
     default_team_id: UUID | None = None,
 ) -> Conversation:
     """
@@ -149,7 +148,7 @@ async def get_or_create_conversation(
     async with pool.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT id, status, assignee_id, team_id, bot_id,
+            SELECT id, status, assignee_id, team_id,
                    last_contact_message_at, resolved_at
             FROM conversations
             WHERE inbox_id = %s AND contact_id = %s AND status <> 'resolved'
@@ -162,12 +161,12 @@ async def get_or_create_conversation(
             cur = await conn.execute(
                 """
                 INSERT INTO conversations
-                    (account_id, inbox_id, contact_id, status, bot_id, team_id)
-                VALUES (%s, %s, %s, 'bot', %s, %s)
-                RETURNING id, status, assignee_id, team_id, bot_id,
+                    (account_id, inbox_id, contact_id, status, team_id)
+                VALUES (%s, %s, %s, 'bot', %s)
+                RETURNING id, status, assignee_id, team_id,
                           last_contact_message_at, resolved_at
                 """,
-                (account_id, inbox_id, contact_id, bot_id, default_team_id),
+                (account_id, inbox_id, contact_id, default_team_id),
             )
             row = await cur.fetchone()
 
@@ -179,9 +178,8 @@ async def get_or_create_conversation(
         status=ConversationStatus(row[1]),
         assignee_id=row[2],
         team_id=row[3],
-        bot_id=row[4],
-        last_contact_message_at=row[5],
-        resolved_at=row[6],
+        last_contact_message_at=row[4],
+        resolved_at=row[5],
     )
 
 
@@ -206,6 +204,38 @@ async def save_conversation(conv: Conversation) -> None:
         )
 
 
+async def save_conversation_if_unchanged(
+    conv: Conversation, expected_status: ConversationStatus, expected_assignee_id: UUID | None
+) -> bool:
+    """
+    Igual que save_conversation, pero condicionada al estado que se leyó
+    antes de decidir la transición -- evita que dos agentes tomando la
+    misma conversación casi al mismo tiempo terminen con "gana el último
+    UPDATE" sin que ninguno se entere. Devuelve False si alguien más ya
+    la cambió en el medio (0 filas afectadas)."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            UPDATE conversations
+               SET status = %s, assignee_id = %s, team_id = %s,
+                   last_contact_message_at = %s, resolved_at = %s
+             WHERE id = %s AND status = %s AND assignee_id IS NOT DISTINCT FROM %s
+            """,
+            (
+                conv.status.value,
+                conv.assignee_id,
+                conv.team_id,
+                conv.last_contact_message_at,
+                conv.resolved_at,
+                conv.id,
+                expected_status.value,
+                expected_assignee_id,
+            ),
+        )
+    return cur.rowcount > 0
+
+
 async def save_inbound(msg: InboundMessage, conversation_id: UUID) -> UUID | None:
     """Devuelve None si el mensaje ya estaba guardado (webhook repetido)."""
     pool = await get_pool()
@@ -216,6 +246,39 @@ async def save_inbound(msg: InboundMessage, conversation_id: UUID) -> UUID | Non
                 (account_id, conversation_id, inbox_id, channel_message_id,
                  sender_type, type, content, media, delivery_status)
             VALUES (%s, %s, %s, %s, 'contact', %s, %s, %s, 'delivered')
+            ON CONFLICT DO NOTHING
+            RETURNING id
+            """,
+            (
+                msg.account_id,
+                conversation_id,
+                msg.inbox_id,
+                msg.channel_message_id,
+                msg.type.value,
+                msg.as_agent_text(),
+                msg.media.model_dump_json() if msg.media else None,
+            ),
+        )
+        row = await cur.fetchone()
+    return row[0] if row else None
+
+
+async def save_inbound_rate_limited(msg: InboundMessage, conversation_id: UUID) -> UUID | None:
+    """
+    Igual que save_inbound, pero para un mensaje que el rate limiter
+    descartó antes de pasarlo al agente -- se guarda igual (mismo
+    ON CONFLICT DO NOTHING contra reintentos de Meta) para que quede
+    visible en la bandeja, con un delivery_status distinto en vez de
+    'delivered' para no confundirlo con un mensaje que sí se procesó.
+    """
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            """
+            INSERT INTO messages
+                (account_id, conversation_id, inbox_id, channel_message_id,
+                 sender_type, type, content, media, delivery_status)
+            VALUES (%s, %s, %s, %s, 'contact', %s, %s, %s, 'rate_limited')
             ON CONFLICT DO NOTHING
             RETURNING id
             """,
@@ -827,6 +890,17 @@ async def delete_account_membership(account_id: UUID, user_id: UUID) -> None:
         )
 
 
+async def count_administrators(account_id: UUID) -> int:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT count(*) FROM account_users WHERE account_id = %s AND role = 'administrator'",
+            (account_id,),
+        )
+        row = await cur.fetchone()
+    return row[0]
+
+
 async def get_account_members(account_id: UUID) -> list[dict]:
     pool = await get_pool()
     async with pool.connection() as conn:
@@ -908,7 +982,7 @@ async def get_conversation(conversation_id: UUID) -> Conversation | None:
         cur = await conn.execute(
             """
             SELECT id, account_id, inbox_id, contact_id, status, assignee_id,
-                   team_id, bot_id, last_contact_message_at, resolved_at
+                   team_id, last_contact_message_at, resolved_at
               FROM conversations
              WHERE id = %s
             """,
@@ -927,9 +1001,8 @@ async def get_conversation(conversation_id: UUID) -> Conversation | None:
         status=ConversationStatus(row[4]),
         assignee_id=row[5],
         team_id=row[6],
-        bot_id=row[7],
-        last_contact_message_at=row[8],
-        resolved_at=row[9],
+        last_contact_message_at=row[7],
+        resolved_at=row[8],
     )
 
 
@@ -1151,6 +1224,32 @@ async def get_active_bot_graph(account_id: UUID) -> dict | None:
         )
         rows = await cur.fetchall()
     return rows[0][0] if rows else None
+
+
+async def get_graph_version(account_id: UUID) -> int:
+    """0 si nunca se invalidó nada para esta cuenta -- ver
+    agent/graph_cache.py."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        cur = await conn.execute(
+            "SELECT version FROM account_graph_versions WHERE account_id = %s",
+            (account_id,),
+        )
+        row = await cur.fetchone()
+    return row[0] if row else 0
+
+
+async def bump_graph_version(account_id: UUID) -> None:
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO account_graph_versions (account_id, version)
+            VALUES (%s, 1)
+            ON CONFLICT (account_id) DO UPDATE SET version = account_graph_versions.version + 1
+            """,
+            (account_id,),
+        )
 
 
 async def get_bot_for_account(account_id: UUID) -> dict | None:

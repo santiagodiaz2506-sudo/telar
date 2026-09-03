@@ -18,7 +18,7 @@ from collections import defaultdict
 from uuid import UUID
 
 from telar.config import settings
-from telar.core.ratelimit import SlidingWindowLimiter
+from telar.core import ratelimit
 from telar.core.types import InboundMessage
 from telar.db import repositories as repo
 
@@ -26,15 +26,14 @@ log = logging.getLogger(__name__)
 
 
 class Dispatcher:
-    def __init__(self, handler, debounce: float | None = None) -> None:
+    def __init__(
+        self, handler, debounce: float | None = None, on_rate_limited=None
+    ) -> None:
         self._handler = handler
         self._debounce = debounce if debounce is not None else settings().debounce_seconds
+        self._on_rate_limited = on_rate_limited
         self._timers: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
-        self._limiter = SlidingWindowLimiter(
-            max_events=settings().rate_limit_messages_per_window,
-            window_seconds=settings().rate_limit_window_seconds,
-        )
 
     async def submit(self, msg: InboundMessage) -> None:
         """
@@ -45,9 +44,18 @@ class Dispatcher:
         key = self._key(msg)
 
         # Anti-abuso: un contacto que manda mensajes en bucle no debe poder
-        # disparar llamadas ilimitadas al LLM ni llenar el buffer.
-        if not self._limiter.allow(key):
+        # disparar llamadas ilimitadas al LLM ni llenar el buffer. Contador
+        # compartido en Postgres (core/ratelimit.py) -- correcto sin
+        # importar cuántos procesos/réplicas lo compartan.
+        allowed = await ratelimit.allow(
+            f"msg:{key}",
+            settings().rate_limit_messages_per_window,
+            settings().rate_limit_window_seconds,
+        )
+        if not allowed:
             log.warning("limite de mensajes excedido para %s, se descarta", key)
+            if self._on_rate_limited:
+                await self._on_rate_limited(msg)
             return
 
         await repo.insert_buffered_message(msg)

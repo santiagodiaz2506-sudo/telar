@@ -101,7 +101,7 @@ async def save_bot(
         bot_id, version, body.graph, notes=body.notes, created_by=membership.user_id
     )
     await repo.set_active_bot_version(bot_id, version_id)
-    graph_cache.invalidate(account_id)
+    await graph_cache.invalidate(account_id)
 
     return BotResponse(id=bot_id, name=body.name, version=version, graph=body.graph)
 
@@ -128,7 +128,7 @@ async def activate_bot_version(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Versión no encontrada")
 
     await repo.set_active_bot_version(bot["id"], version_id)
-    graph_cache.invalidate(account_id)
+    await graph_cache.invalidate(account_id)
 
     versions = await repo.list_bot_versions(bot["id"])
     activated = next(v for v in versions if v["id"] == version_id)

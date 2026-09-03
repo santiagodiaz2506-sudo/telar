@@ -105,7 +105,7 @@ async def create_llm_provider(
     is_active = False
     if await repo.get_active_llm_provider(account_id) is None:
         await repo.set_active_llm_provider(account_id, provider_id)
-        graph_cache.invalidate(account_id)
+        await graph_cache.invalidate(account_id)
         is_active = True
     return LlmProviderResponse(
         id=provider_id, name=body.name, provider=body.provider, model=body.model,
@@ -126,7 +126,7 @@ async def update_llm_provider(
     if body.api_key:
         await repo.update_llm_provider_secret(provider_id, crypto.encrypt(body.api_key).encode())
     if existing["is_active"]:
-        graph_cache.invalidate(account_id)
+        await graph_cache.invalidate(account_id)
 
     return LlmProviderResponse(
         id=provider_id, name=body.name, provider=existing["provider"], model=body.model,
@@ -143,7 +143,7 @@ async def delete_llm_provider(
     existing = await _get_provider_or_404(account_id, provider_id)
     await repo.delete_llm_provider(provider_id)
     if existing["is_active"]:
-        graph_cache.invalidate(account_id)
+        await graph_cache.invalidate(account_id)
 
 
 @router.post("/{provider_id}/activate", response_model=LlmProviderResponse)

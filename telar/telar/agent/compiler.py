@@ -158,7 +158,19 @@ def _make_agent_node(
         if memory_window is not None and memory_window >= 0:
             history = history[-memory_window:] if memory_window > 0 else []
         messages = [SystemMessage(content=prompt), *history]
-        return {"messages": [await bound_model.ainvoke(messages)]}
+        try:
+            reply = await bound_model.ainvoke(messages)
+        except Exception as e:
+            # No cambia el reintento (ya correcto: worker/dispatcher.py
+            # deja el mensaje en el buffer y el próximo intento dedupea
+            # sin volver a llamar al LLM) -- esto solo evita que quede
+            # enterrado un stack trace de LangChain en vez de una línea
+            # que diga qué cuenta necesita un proveedor LLM configurado.
+            log.error(
+                "el modelo del agente falló para la cuenta %s: %s", state["account_id"], e
+            )
+            raise
+        return {"messages": [reply]}
 
     return agent
 

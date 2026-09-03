@@ -12,6 +12,14 @@ Vivir a nivel de módulo permite que cualquier código que mute lo que el
 grafo compilado ve (guardar un bot_version, activar otra versión, crear o
 editar una tool, tocar una base de conocimiento) llame invalidate() sin
 necesitar una referencia al Pipeline en ejecución.
+
+El objeto compilado en sí (un StateGraph con modelos ya enlazados) no es
+serializable para compartirlo entre procesos -- lo que sí se comparte es
+de qué versión es, en account_graph_versions (Postgres). Cada proceso
+sigue cacheando su propio grafo compilado localmente, pero lo valida
+contra esa versión compartida en cada uso: si otro proceso invalidó la
+cuenta, la próxima get_or_build() de cualquier proceso lo detecta solo,
+sin que invalidate() necesite avisarle a nadie directamente.
 """
 
 from __future__ import annotations
@@ -24,23 +32,28 @@ from telar.custom_tools.loader import build_custom_tools
 from telar.db import repositories as repo
 from telar.llm.registry import resolve_model_spec
 
-_graphs: dict[str, object] = {}
+_graphs: dict[str, tuple[int, object]] = {}
 
 
 async def get_or_build(account_id: UUID, checkpointer) -> object:
     key = str(account_id)
-    if key not in _graphs:
+    current_version = await repo.get_graph_version(account_id)
+
+    cached = _graphs.get(key)
+    if cached is None or cached[0] != current_version:
         extra_tools = await build_custom_tools(account_id)
         graph_json = await repo.get_active_bot_graph(account_id)
         model_spec, model_kwargs = await _resolve_model(account_id)
-        _graphs[key] = build_graph(
+        graph = build_graph(
             model_spec=model_spec,
             model_kwargs=model_kwargs,
             checkpointer=checkpointer,
             extra_tools=extra_tools,
             graph_json=graph_json,
         )
-    return _graphs[key]
+        _graphs[key] = (current_version, graph)
+
+    return _graphs[key][1]
 
 
 async def _resolve_model(account_id: UUID) -> tuple[str | None, dict]:
@@ -62,5 +75,5 @@ async def _resolve_model(account_id: UUID) -> tuple[str | None, dict]:
     return model_spec, kwargs
 
 
-def invalidate(account_id: UUID) -> None:
-    _graphs.pop(str(account_id), None)
+async def invalidate(account_id: UUID) -> None:
+    await repo.bump_graph_version(account_id)

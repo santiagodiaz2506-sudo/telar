@@ -176,10 +176,17 @@ async def remove_member(
         require_role(AccountRole.ADMINISTRATOR, AccountRole.SUPERVISOR)
     ),
 ) -> None:
+    target = await repo.get_account_membership(account_id, user_id)
+    target_role = AccountRole(target["role"]) if target else None
+
     if not (membership.is_superadmin or membership.role == AccountRole.ADMINISTRATOR):
-        target = await repo.get_account_membership(account_id, user_id)
-        target_role = AccountRole(target["role"]) if target else None
         _guard_supervisor_role(membership, target_role or AccountRole.ADMINISTRATOR)
+
+    if target_role is AccountRole.ADMINISTRATOR and await repo.count_administrators(account_id) <= 1:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "No podés sacar al último administrador de la cuenta"
+        )
+
     await repo.delete_account_membership(account_id, user_id)
 
 

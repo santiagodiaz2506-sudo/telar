@@ -30,7 +30,7 @@ log = logging.getLogger("telar")
 
 adapter = default_adapter()
 pipeline = Pipeline(adapter)
-dispatcher = Dispatcher(pipeline.handle)
+dispatcher = Dispatcher(pipeline.handle, on_rate_limited=pipeline.handle_rate_limited)
 
 router = APIRouter()
 

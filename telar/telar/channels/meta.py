@@ -94,7 +94,17 @@ class MetaWhatsAppAdapter(ChannelAdapter):
                 }
 
                 for raw in value["messages"]:
-                    msg = self._parse_one(raw, profiles, account_id, inbox_id)
+                    try:
+                        msg = self._parse_one(raw, profiles, account_id, inbox_id)
+                    except Exception:
+                        # Un campo faltante/con formato nuevo en un solo
+                        # mensaje no debe tumbar el lote entero -- Meta
+                        # agrupa varios mensajes por webhook.
+                        log.exception(
+                            "no se pudo parsear un mensaje del lote (id=%s), se omite",
+                            raw.get("id"),
+                        )
+                        continue
                     if msg:
                         out.append(msg)
         return out

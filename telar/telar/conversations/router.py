@@ -8,6 +8,7 @@ Nombre del paquete elegido para no confundir con la tabla `inboxes`
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
@@ -185,6 +186,7 @@ async def assign_conversation(
     membership: Membership = Depends(require_role()),
 ) -> ConversationStatusResponse:
     conv = await _get_conversation_or_404(account_id, conversation_id)
+    expected_status, expected_assignee_id = conv.status, conv.assignee_id
 
     target_id = body.assignee_id or membership.user_id
     is_self = target_id == membership.user_id
@@ -202,7 +204,13 @@ async def assign_conversation(
     except st.InvalidTransition as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
 
-    await repo.save_conversation(conv)
+    # Condición sobre el estado leído al principio -- si otra request ya
+    # la tomó en el medio (dos agentes casi simultáneos), esto pierde en
+    # vez de pisar silenciosamente esa asignación.
+    ok = await repo.save_conversation_if_unchanged(conv, expected_status, expected_assignee_id)
+    if not ok:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Alguien ya tomó esta conversación, recargá")
+
     return ConversationStatusResponse(id=conv.id, status=conv.status.value, assignee_id=conv.assignee_id)
 
 
@@ -300,6 +308,37 @@ async def send_message(
     )
 
 
+_TEMPLATE_PLACEHOLDER = re.compile(r"\{\{(\d+)\}\}")
+
+
+def _substitute_template_params(components: list[dict], params: dict[str, str]) -> list[dict]:
+    """
+    Traduce los componentes guardados (con `text` de referencia, ej. "Hola
+    {{1}}") al formato que Meta espera para el envío: un `parameters` por
+    componente, en el orden de sus placeholders. Un componente sin
+    placeholders se omite -- Meta no necesita mandarlo de vuelta.
+
+    Rechaza con 422 si falta un valor para algún placeholder: mandar la
+    plantilla con "{{1}}" literal a un cliente real es peor que no
+    mandarla.
+    """
+    substituted: list[dict] = []
+    for component in components:
+        placeholders = _TEMPLATE_PLACEHOLDER.findall(component.get("text", ""))
+        if not placeholders:
+            continue
+        parameters = []
+        for n in placeholders:
+            if n not in params:
+                raise HTTPException(
+                    status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    f"Falta el valor de la variable {{{{{n}}}}} de la plantilla",
+                )
+            parameters.append({"type": "text", "text": params[n]})
+        substituted.append({"type": component["type"], "parameters": parameters})
+    return substituted
+
+
 @router.post(
     "/conversations/{conversation_id}/messages/template", response_model=MessageResponse
 )
@@ -330,7 +369,9 @@ async def send_template_message(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Contacto no encontrado")
 
     template_ref = TemplateRef(
-        name=template["name"], language=template["language"], components=template["components"]
+        name=template["name"],
+        language=template["language"],
+        components=_substitute_template_params(template["components"], body.params),
     )
     # _build_body() (channels/meta.py) prioriza `template` sobre `text` -- el
     # texto acá es solo para que el mensaje se vea en el hilo, nunca se manda
