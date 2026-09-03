@@ -61,7 +61,7 @@ import {
   ROLE_HINT,
   ROLE_LABEL,
 } from '@/lib/roles'
-import type { AccountRoleValue } from '@/types/api'
+import type { AccountRoleValue, MemberResponse, TeamMemberResponse } from '@/types/api'
 
 export function TeamPage() {
   const { accountId } = useParams<{ accountId: string }>()
@@ -109,22 +109,13 @@ function MembersTab({
   role: string | null
   currentUserId?: string
 }) {
-  const queryClient = useQueryClient()
   const canManage = canManageMembers(role)
   const [adding, setAdding] = React.useState(false)
+  const [removing, setRemoving] = React.useState<MemberResponse | null>(null)
 
   const { data: members, isLoading } = useQuery({
     queryKey: ['members', accountId],
     queryFn: () => getMembers(accountId),
-  })
-
-  const remove = useMutation({
-    mutationFn: (userId: string) => removeMember(accountId, userId),
-    onSuccess: () => {
-      toast.success('Miembro dado de baja')
-      queryClient.invalidateQueries({ queryKey: ['members', accountId] })
-    },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo dar de baja'),
   })
 
   return (
@@ -192,9 +183,8 @@ function MembersTab({
                         <Button
                           variant="destructive-ghost"
                           size="xs"
-                          disabled={remove.isPending}
                           title="Sacar de la cuenta"
-                          onClick={() => remove.mutate(m.user_id)}
+                          onClick={() => setRemoving(m)}
                         >
                           <Trash2 />
                           Sacar
@@ -232,6 +222,11 @@ function MembersTab({
       </div>
 
       <AddMemberDialog accountId={accountId} actorRole={role} open={adding} onOpenChange={setAdding} />
+      <RemoveMemberDialog
+        accountId={accountId}
+        member={removing}
+        onOpenChange={(open) => !open && setRemoving(null)}
+      />
     </section>
   )
 }
@@ -396,6 +391,54 @@ function AddMemberDialog({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function RemoveMemberDialog({
+  accountId,
+  member,
+  onOpenChange,
+}: {
+  accountId: string
+  member: MemberResponse | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const queryClient = useQueryClient()
+
+  const remove = useMutation({
+    mutationFn: () => removeMember(accountId, member!.user_id),
+    onSuccess: () => {
+      toast.success('Miembro dado de baja')
+      queryClient.invalidateQueries({ queryKey: ['members', accountId] })
+      onOpenChange(false)
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo dar de baja'),
+  })
+
+  return (
+    <Dialog open={!!member} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Sacar a {member?.name}</DialogTitle>
+          <DialogDescription>
+            Pierde acceso a esta cuenta de inmediato. Esta acción no se puede deshacer.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            Sacar
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -566,22 +609,13 @@ function TeamRow({
   canAssign: boolean
   onAddClick: () => void
 }) {
-  const queryClient = useQueryClient()
   const [expanded, setExpanded] = React.useState(false)
+  const [removing, setRemoving] = React.useState<TeamMemberResponse | null>(null)
 
   const { data: teamMembers, isLoading } = useQuery({
     queryKey: ['team-members', accountId, team.id],
     queryFn: () => getTeamMembers(accountId, team.id),
     enabled: expanded,
-  })
-
-  const remove = useMutation({
-    mutationFn: (userId: string) => removeTeamMember(accountId, team.id, userId),
-    onSuccess: () => {
-      toast.success('Sacado del equipo')
-      queryClient.invalidateQueries({ queryKey: ['team-members', accountId, team.id] })
-    },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo sacar del equipo'),
   })
 
   return (
@@ -630,9 +664,8 @@ function TeamRow({
                     <Button
                       variant="destructive-ghost"
                       size="xs"
-                      disabled={remove.isPending}
                       title="Sacar del equipo"
-                      onClick={() => remove.mutate(m.user_id)}
+                      onClick={() => setRemoving(m)}
                     >
                       <Trash2 />
                     </Button>
@@ -643,7 +676,63 @@ function TeamRow({
           )}
         </div>
       )}
+      <RemoveTeamMemberDialog
+        accountId={accountId}
+        teamId={team.id}
+        member={removing}
+        onOpenChange={(open) => !open && setRemoving(null)}
+      />
     </li>
+  )
+}
+
+function RemoveTeamMemberDialog({
+  accountId,
+  teamId,
+  member,
+  onOpenChange,
+}: {
+  accountId: string
+  teamId: string
+  member: TeamMemberResponse | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const queryClient = useQueryClient()
+
+  const remove = useMutation({
+    mutationFn: () => removeTeamMember(accountId, teamId, member!.user_id),
+    onSuccess: () => {
+      toast.success('Sacado del equipo')
+      queryClient.invalidateQueries({ queryKey: ['team-members', accountId, teamId] })
+      onOpenChange(false)
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo sacar del equipo'),
+  })
+
+  return (
+    <Dialog open={!!member} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Sacar a {member?.name} del equipo</DialogTitle>
+          <DialogDescription>
+            Deja de ver las conversaciones de este equipo. Esta acción no se puede deshacer.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            Sacar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
