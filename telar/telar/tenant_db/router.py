@@ -102,6 +102,9 @@ async def save_database_connection(
         account_id, body.engine, body.host, body.port, body.database_name, body.username,
         encrypted, body.use_ssl,
     )
+    await repo.insert_audit_log(
+        account_id, membership.user_id, "tenant_db_connection.save", "tenant_db_connection", None
+    )
     row = await repo.get_account_database_connection(account_id)
     return DatabaseConnectionResponse(**row)
 
@@ -136,3 +139,6 @@ async def delete_database_connection(
     account_id: UUID, membership: Membership = Depends(require_role(AccountRole.ADMINISTRATOR))
 ) -> None:
     await repo.delete_account_database_connection(account_id)
+    await repo.insert_audit_log(
+        account_id, membership.user_id, "tenant_db_connection.delete", "tenant_db_connection", None
+    )

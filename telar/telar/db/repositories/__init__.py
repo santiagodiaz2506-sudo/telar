@@ -7,6 +7,7 @@ para quien lee/edita repositories, no un cambio de API pública.
 """
 
 from telar.db.repositories.accounts import *  # noqa: F401,F403
+from telar.db.repositories.audit import *  # noqa: F401,F403
 from telar.db.repositories.auth import *  # noqa: F401,F403
 from telar.db.repositories.bots import *  # noqa: F401,F403
 from telar.db.repositories.conversations import *  # noqa: F401,F403

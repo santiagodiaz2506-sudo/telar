@@ -83,6 +83,7 @@ async def create_inbox(
         account_id, body.name, body.phone_number_id, body.waba_id, credentials,
         body.default_team_id,
     )
+    await repo.insert_audit_log(account_id, membership.user_id, "inbox.create", "inbox", inbox_id)
     inbox = await repo.get_inbox(inbox_id)
     return InboxResponse(**inbox)
 
@@ -110,5 +111,8 @@ async def rotate_credentials(
     await _get_inbox_or_404(account_id, inbox_id)
     credentials = crypto.encrypt(body.access_token).encode()
     await repo.update_inbox_credentials(inbox_id, body.phone_number_id, body.waba_id, credentials)
+    await repo.insert_audit_log(
+        account_id, membership.user_id, "inbox.rotate_credentials", "inbox", inbox_id
+    )
     inbox = await repo.get_inbox(inbox_id)
     return InboxResponse(**inbox)

@@ -100,6 +100,9 @@ async def create_llm_provider(
     provider_id = await repo.insert_llm_provider(
         account_id, body.name, body.provider, body.model, body.base_url, api_key
     )
+    await repo.insert_audit_log(
+        account_id, membership.user_id, "llm_provider.create", "llm_provider", provider_id
+    )
     # El primero de la cuenta queda activo: si no, el wizard crea un modelo
     # que el bot nunca usa hasta que alguien aprieta "Activar".
     is_active = False
@@ -125,6 +128,9 @@ async def update_llm_provider(
     await repo.update_llm_provider(provider_id, body.name, body.model, body.base_url)
     if body.api_key:
         await repo.update_llm_provider_secret(provider_id, crypto.encrypt(body.api_key).encode())
+        await repo.insert_audit_log(
+            account_id, membership.user_id, "llm_provider.update_secret", "llm_provider", provider_id
+        )
     if existing["is_active"]:
         await graph_cache.invalidate(account_id)
 
@@ -142,6 +148,9 @@ async def delete_llm_provider(
 ) -> None:
     existing = await _get_provider_or_404(account_id, provider_id)
     await repo.delete_llm_provider(provider_id)
+    await repo.insert_audit_log(
+        account_id, membership.user_id, "llm_provider.delete", "llm_provider", provider_id
+    )
     if existing["is_active"]:
         await graph_cache.invalidate(account_id)
 
@@ -154,7 +163,7 @@ async def activate_llm_provider(
 ) -> LlmProviderResponse:
     await _get_provider_or_404(account_id, provider_id)
     await repo.set_active_llm_provider(account_id, provider_id)
-    graph_cache.invalidate(account_id)
+    await graph_cache.invalidate(account_id)
 
     updated = await _get_provider_or_404(account_id, provider_id)
     return LlmProviderResponse(**updated)

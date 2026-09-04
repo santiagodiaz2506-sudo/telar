@@ -93,6 +93,7 @@ async def create_tool(
     except service.ToolValidationError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
 
+    await repo.insert_audit_log(account_id, membership.user_id, "tool.create", "tool", tool_id)
     return ToolResponse(
         id=tool_id, name=body.name, description=body.description, kind=body.kind,
         config=body.config, schema_=body.schema_,
@@ -115,6 +116,11 @@ async def update_tool(
     except service.ToolValidationError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e)) from e
 
+    if body.secret is not None:
+        await repo.insert_audit_log(
+            account_id, membership.user_id, "tool.update_secret", "tool", tool_id
+        )
+
     return ToolAdminResponse(
         id=tool_id, name=body.name, description=body.description, kind=existing["kind"],
         config=body.config, schema_=body.schema_, enabled=body.enabled,
@@ -129,3 +135,4 @@ async def delete_tool(
 ) -> None:
     await _get_tool_or_404(account_id, tool_id)
     await service.delete_tool(account_id, tool_id)
+    await repo.insert_audit_log(account_id, membership.user_id, "tool.delete", "tool", tool_id)
