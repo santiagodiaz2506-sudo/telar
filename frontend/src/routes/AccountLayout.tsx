@@ -1,6 +1,6 @@
 import { Navigate, Outlet, useParams } from 'react-router-dom'
 
-import { LogoMark } from '@/components/Logo'
+import { Logo } from '@/components/Logo'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useAuth } from '@/lib/auth'
 
@@ -27,9 +27,9 @@ export function BootScreen() {
   return (
     <div className="flex h-svh items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-3">
-        <span className="grid size-10 animate-pulse place-items-center rounded-xl bg-primary text-primary-foreground">
-          <LogoMark className="size-6" />
-        </span>
+        <div className="animate-pulse">
+          <Logo variant="mark" size={40} />
+        </div>
         <span className="text-sm text-muted-foreground">Cargando Telar…</span>
       </div>
     </div>

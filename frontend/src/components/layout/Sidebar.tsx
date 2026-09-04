@@ -16,7 +16,7 @@ import {
 import * as React from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 
-import { LogoMark } from '@/components/Logo'
+import { Logo } from '@/components/Logo'
 import { NewAccountDialog } from '@/components/NewAccountDialog'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { ContactAvatar } from '@/components/ui/avatar'
@@ -100,12 +100,11 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
     >
       {/* Marca */}
       <div className={cn('flex h-14 items-center', collapsed ? 'justify-center' : 'gap-2 px-1')}>
-        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-primary text-primary-foreground">
-          <LogoMark className="size-[18px]" />
-        </span>
-        {!collapsed && (
+        {collapsed ? (
+          <Logo variant="mark" size={26} />
+        ) : (
           <>
-            <span className="text-[15px] font-semibold tracking-tight">Telar</span>
+            <Logo variant="horizontal" size={22} />
             <Button
               variant="ghost"
               size="icon-sm"

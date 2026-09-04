@@ -1,4 +1,10 @@
-# Telar
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/telar-horizontal-dark.svg" />
+    <source media="(prefers-color-scheme: light)" srcset="brand/telar-horizontal-light.svg" />
+    <img src="brand/telar-horizontal-light.svg" alt="Telar" width="280" />
+  </picture>
+</p>
 
 Plataforma open source para construir agentes conversacionales sobre WhatsApp Cloud API.
 

@@ -4,7 +4,7 @@ import * as React from 'react'
 import { Link, Navigate } from 'react-router-dom'
 
 import { EmptyState } from '@/components/EmptyState'
-import { LogoMark } from '@/components/Logo'
+import { Logo } from '@/components/Logo'
 import { NewAccountDialog } from '@/components/NewAccountDialog'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
@@ -34,10 +34,7 @@ export function AccountPickerPage() {
 
       <div className="mx-auto flex min-h-svh max-w-md flex-col justify-center gap-6 px-6 py-12">
         <div className="flex items-center gap-2.5">
-          <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-            <LogoMark className="size-5" />
-          </span>
-          <span className="text-lg font-semibold tracking-tight">Telar</span>
+          <Logo variant="horizontal" size={26} />
         </div>
 
         <div>

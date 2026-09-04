@@ -1,12 +1,18 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { ChevronDown, Inbox, Loader2, RefreshCw, Search, X } from 'lucide-react'
+import { Check, ChevronDown, Inbox, Loader2, RefreshCw, Search, X } from 'lucide-react'
 import * as React from 'react'
 import { Outlet, useNavigate, useParams } from 'react-router-dom'
 
 import { EmptyState } from '@/components/EmptyState'
 import { ConversationListItem } from '@/components/inbox/ConversationListItem'
-import { StatusDot } from '@/components/StatusBadge'
+import { StatusDot, statusChipClass } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -132,6 +138,8 @@ export function InboxLayout() {
 
   if (!accountId) return null
 
+  const activeFilter = FILTERS.find((f) => f.value === filter) ?? FILTERS[0]
+
   return (
     <div className="flex min-h-0 flex-1">
       <section
@@ -187,39 +195,52 @@ export function InboxLayout() {
           </div>
         </div>
 
-        {/* Filtros por estado, con el conteo de cada uno */}
-        <div className="flex flex-wrap gap-1 px-3 pb-2.5">
-          {FILTERS.map((f) => {
-            const active = filter === f.value
-            return (
+        {/* Filtro por estado: desplegable en vez de fila de chips -- no
+            pesa cuando la lista es angosta y de todos modos solo se mira uno
+            a la vez. */}
+        <div className="px-3 pb-2.5">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <button
-                key={f.value}
-                onClick={() => setFilter(f.value)}
-                aria-pressed={active}
                 className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-full border pr-1.5 pl-2.5 py-1 text-[11.5px] font-medium transition-colors duration-150',
-                  active
-                    ? 'border-transparent bg-primary text-primary-foreground'
-                    : 'border-border text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+                  'inline-flex items-center gap-1.5 rounded-full border border-transparent py-1 pr-2 pl-2.5 text-[11.5px] font-medium transition-colors duration-150',
+                  activeFilter.value === 'all'
+                    ? 'bg-primary-soft text-primary-soft-foreground'
+                    : statusChipClass(activeFilter.value),
                 )}
               >
-                {f.value !== 'all' && !active && <StatusDot status={f.value} />}
-                {f.label}
-                {counts[f.value] !== undefined && (
-                  <span
-                    className={cn(
-                      'tabular min-w-4 rounded-full px-1 py-px text-center text-[10.5px] leading-[15px] font-semibold',
-                      active
-                        ? 'bg-primary-foreground/20 text-primary-foreground'
-                        : 'bg-surface-2 text-muted-foreground/80',
-                    )}
-                  >
-                    {counts[f.value]}
+                {activeFilter.value !== 'all' && <StatusDot status={activeFilter.value} />}
+                {activeFilter.label}
+                {counts[activeFilter.value] !== undefined && (
+                  <span className="tabular min-w-4 rounded-full bg-black/[0.07] px-1 py-px text-center text-[10.5px] leading-[15px] font-semibold text-current dark:bg-white/15">
+                    {counts[activeFilter.value]}
                   </span>
                 )}
+                <ChevronDown className="size-3.5 opacity-70" />
               </button>
-            )
-          })}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-40">
+              {FILTERS.map((f) => {
+                const active = filter === f.value
+                return (
+                  <DropdownMenuItem key={f.value} onSelect={() => setFilter(f.value)} className="justify-between">
+                    <span className="flex items-center gap-1.5">
+                      {f.value !== 'all' && <StatusDot status={f.value} />}
+                      {f.label}
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      {counts[f.value] !== undefined && (
+                        <span className="tabular min-w-4 rounded-full bg-surface-2 px-1 py-px text-center text-[10.5px] leading-[15px] font-semibold text-muted-foreground/80">
+                          {counts[f.value]}
+                        </span>
+                      )}
+                      {active && <Check className="size-3.5 text-primary" />}
+                    </span>
+                  </DropdownMenuItem>
+                )
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {/* Filtro por equipo */}

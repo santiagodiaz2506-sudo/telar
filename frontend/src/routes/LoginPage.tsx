@@ -2,7 +2,7 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 import * as React from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 
-import { LogoMark } from '@/components/Logo'
+import { Logo } from '@/components/Logo'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -48,10 +48,7 @@ export function LoginPage() {
 
         <div className="mx-auto w-full max-w-sm">
           <div className="mb-8 flex items-center gap-2.5">
-            <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
-              <LogoMark className="size-5" />
-            </span>
-            <span className="text-lg font-semibold tracking-tight">Telar</span>
+            <Logo variant="horizontal" size={26} />
           </div>
 
           <h1 className="text-2xl font-semibold tracking-tight">Entrá a tu bandeja</h1>
@@ -112,6 +109,12 @@ export function LoginPage() {
       {/* Panel de marca */}
       <div className="relative hidden overflow-hidden border-l border-border bg-surface lg:block">
         <div className="weave-bg absolute inset-0 opacity-70" />
+        <Logo
+          variant="mark"
+          size={340}
+          className="pointer-events-none absolute -right-24 -bottom-24 text-foreground/[0.04]"
+          accent="currentColor"
+        />
         <div className="relative flex h-full flex-col justify-center gap-6 px-14">
           <p className="max-w-md text-[26px] leading-snug font-semibold tracking-tight text-balance">
             Tu número de WhatsApp, tu modelo, tu base de datos, tu servidor.
