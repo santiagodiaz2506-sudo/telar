@@ -25,15 +25,33 @@ log = logging.getLogger(__name__)
 
 _MAX_ROWS = 20
 _READONLY_PREFIX = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
+_POSTGRES_SCHEMES = {"postgres", "postgresql"}
 
 
 class UnsafeQueryError(Exception):
     pass
 
 
+class UnsupportedEngineError(Exception):
+    pass
+
+
 def check_query_is_readonly(query: str) -> None:
     if not _READONLY_PREFIX.match(query):
         raise UnsafeQueryError("la query debe empezar con SELECT o WITH")
+
+
+def check_connection_is_postgres(connection_string: str) -> None:
+    """psycopg (usado en _run más abajo) solo entiende Postgres -- una
+    connection_string de otro motor (ej. mysql://) recién fallaría al
+    ejecutar la tool, con un error genérico. Se rechaza acá, al crear o
+    editar la tool, para que el error sea claro y temprano."""
+    scheme = connection_string.split("://", 1)[0].lower() if "://" in connection_string else ""
+    if scheme not in _POSTGRES_SCHEMES:
+        raise UnsupportedEngineError(
+            "la connection_string debe ser de Postgres (postgres:// o "
+            "postgresql://) -- esta tool no soporta otros motores"
+        )
 
 
 def build_sql_tool(row: dict[str, Any], secret: dict[str, Any]) -> StructuredTool:
