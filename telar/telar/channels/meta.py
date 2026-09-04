@@ -36,6 +36,9 @@ log = logging.getLogger(__name__)
 _MEDIA_TYPES = {"image", "audio", "video", "document", "sticker"}
 
 
+_VALID_STATUSES = {"sent", "delivered", "read", "failed"}
+
+
 class MetaWhatsAppAdapter(ChannelAdapter):
     channel = Channel.WHATSAPP
 
@@ -107,6 +110,23 @@ class MetaWhatsAppAdapter(ChannelAdapter):
                         continue
                     if msg:
                         out.append(msg)
+        return out
+
+    def parse_statuses(self, payload: dict[str, Any]) -> list[dict[str, str]]:
+        """
+        Actualizaciones de estado de mensajes salientes -- mismo formato de
+        webhook que parse(), pero en value.statuses en vez de
+        value.messages. No son InboundMessage: son un UPDATE puntual sobre
+        un mensaje que ya mandamos (ver repositories.update_message_delivery_status).
+        """
+        out: list[dict[str, str]] = []
+        for entry in payload.get("entry", []):
+            for change in entry.get("changes", []):
+                for raw in change.get("value", {}).get("statuses", []):
+                    channel_message_id = raw.get("id")
+                    status = raw.get("status")
+                    if channel_message_id and status in _VALID_STATUSES:
+                        out.append({"channel_message_id": channel_message_id, "status": status})
         return out
 
     def _parse_one(

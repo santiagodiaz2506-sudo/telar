@@ -69,7 +69,14 @@ async def inbound(request: Request) -> dict[str, str] | Response:
         log.warning("firma inválida, payload descartado")
         return {"status": "ignored"}
 
-    payload = json.loads(raw)
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        # 200 igual: si devolvemos error, Meta reintenta indefinidamente
+        # un body que nunca va a poder parsear.
+        log.error("body del webhook no es JSON válido (%d bytes): %r", len(raw), raw[:200])
+        return {"status": "ok"}
+
     phone_number_id = _phone_number_id(payload)
     if not phone_number_id:
         return {"status": "ok"}
@@ -78,6 +85,9 @@ async def inbound(request: Request) -> dict[str, str] | Response:
     if inbox is None:
         log.warning("phone_number_id %s sin inbox configurado", phone_number_id)
         return {"status": "ok"}
+
+    for status in adapter.parse_statuses(payload):
+        await repo.update_message_delivery_status(**status)
 
     messages = adapter.parse(
         payload, account_id=inbox["account_id"], inbox_id=inbox["id"]

@@ -44,3 +44,20 @@ target-version = "py311"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Loop compartido para toda la sesión: los tests de integración
+# (tests/integration/) usan singletons de proceso (checkpointer, pool) que
+# guardan primitivas de asyncio -- con un loop nuevo por test (el
+# default), esas primitivas quedan atadas al loop del primer test y
+# rompen en el segundo ("bound to a different event loop"). No afecta a
+# los tests existentes: ninguno usa async def directo, todos manejan su
+# propio asyncio.run() aislado (test_compiler.py) o son lógica pura sin
+# asyncio (el resto).
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "integration: necesita Postgres real (tests/integration/) -- excluidos por defecto, ver addopts.",
+]
+# `pytest -q` sigue siendo rápido y sin depender de Postgres por default.
+# Para los de integración: `pytest -m integration` (dentro del contenedor
+# `api` en Windows -- ver tests/integration/conftest.py).
+addopts = "-m 'not integration'"

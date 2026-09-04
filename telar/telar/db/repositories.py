@@ -296,6 +296,18 @@ async def save_inbound_rate_limited(msg: InboundMessage, conversation_id: UUID) 
     return row[0] if row else None
 
 
+async def update_message_delivery_status(channel_message_id: str, status: str) -> None:
+    """Cierra el círculo de sent -> delivered -> read (o failed) que manda
+    Meta en el bloque `statuses` del webhook -- ver
+    channels/meta.py parse_statuses()."""
+    pool = await get_pool()
+    async with pool.connection() as conn:
+        await conn.execute(
+            "UPDATE messages SET delivery_status = %s WHERE channel_message_id = %s",
+            (status, channel_message_id),
+        )
+
+
 def _to_vector_literal(embedding: list[float]) -> str:
     """
     psycopg no trae adaptador para el tipo vector de pgvector: se serializa
