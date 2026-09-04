@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
 import { getTemplates } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import type { InboxResponse } from '@/types/api'
 
 interface Props {
@@ -21,7 +22,7 @@ interface Props {
  */
 export function OutputConfigPanel({ accountId, inbox, onClose }: Props) {
   const { data: templates } = useQuery({
-    queryKey: ['templates', accountId],
+    queryKey: queryKeys.templates(accountId),
     queryFn: () => getTemplates(accountId),
   })
 

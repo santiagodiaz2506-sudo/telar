@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ApiError } from '@/lib/api'
+import { queryKeys } from '@/lib/queryKeys'
 import {
   deleteDatabaseConnection,
   getDatabaseConnection,
@@ -39,7 +40,7 @@ const STATUS_LABEL: Record<DatabaseConnectionStatus, string> = {
 export function DatabaseTab({ accountId }: { accountId: string }) {
   const queryClient = useQueryClient()
   const { data: connection, isLoading } = useQuery({
-    queryKey: ['database-connection', accountId],
+    queryKey: queryKeys.databaseConnection(accountId),
     queryFn: () => getDatabaseConnection(accountId),
   })
 

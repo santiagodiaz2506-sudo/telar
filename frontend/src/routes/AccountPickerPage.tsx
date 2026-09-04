@@ -11,13 +11,14 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/lib/auth'
 import { getAccounts } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import { BootScreen } from '@/routes/AccountLayout'
 
 export function AccountPickerPage() {
   const { user, loading } = useAuth()
   const [creating, setCreating] = React.useState(false)
   const { data: accounts, isLoading } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: queryKeys.accounts(),
     queryFn: getAccounts,
     enabled: !!user,
   })

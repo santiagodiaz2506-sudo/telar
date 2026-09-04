@@ -26,6 +26,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ApiError } from '@/lib/api'
+import { queryKeys } from '@/lib/queryKeys'
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
@@ -39,7 +40,7 @@ export function KnowledgeBasesTab({ accountId }: { accountId: string }) {
   const [deleting, setDeleting] = React.useState<KnowledgeBaseResponse | null>(null)
 
   const { data: kbs, isLoading } = useQuery({
-    queryKey: ['knowledge-bases', accountId],
+    queryKey: queryKeys.knowledgeBases(accountId),
     queryFn: () => getKnowledgeBases(accountId),
   })
 
@@ -199,7 +200,7 @@ function CreateKnowledgeBaseDialog({
     mutationFn: () => createKnowledgeBase(accountId, name.trim()),
     onSuccess: () => {
       toast.success('Base de conocimiento creada')
-      queryClient.invalidateQueries({ queryKey: ['knowledge-bases', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases(accountId) })
       handleOpenChange(false)
     },
     onError: (e) => setError(e instanceof ApiError ? e.message : 'No se pudo crear la base'),
@@ -269,7 +270,7 @@ function DeleteKnowledgeBaseDialog({
     mutationFn: () => deleteKnowledgeBase(accountId, kb!.id),
     onSuccess: () => {
       toast.success('Base de conocimiento eliminada')
-      queryClient.invalidateQueries({ queryKey: ['knowledge-bases', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.knowledgeBases(accountId) })
       onOpenChange(false)
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo eliminar'),

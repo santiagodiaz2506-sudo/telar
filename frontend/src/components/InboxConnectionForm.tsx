@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { ApiError } from '@/lib/api'
 import { createInbox, getTeams, rotateInboxCredentials, updateInbox } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import type { InboxResponse } from '@/types/api'
 
 /**
@@ -38,7 +39,7 @@ export function TeamSelect({
   id?: string
 }) {
   const { data: teams } = useQuery({
-    queryKey: ['teams', accountId],
+    queryKey: queryKeys.teams(accountId),
     queryFn: () => getTeams(accountId),
   })
 
@@ -103,7 +104,7 @@ export function CreateInboxForm({
       }),
     onSuccess: () => {
       toast.success(successMessage)
-      queryClient.invalidateQueries({ queryKey: ['inboxes', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.inboxes(accountId) })
       reset()
       onSuccess()
     },
@@ -217,7 +218,7 @@ export function EditInboxForm({
       }),
     onSuccess: () => {
       toast.success(successMessage)
-      queryClient.invalidateQueries({ queryKey: ['inboxes', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.inboxes(accountId) })
       onSuccess?.()
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo guardar'),
@@ -288,7 +289,7 @@ export function RotateCredentialsForm({
       }),
     onSuccess: () => {
       toast.success('Credenciales actualizadas')
-      queryClient.invalidateQueries({ queryKey: ['inboxes', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.inboxes(accountId) })
       setAccessToken('')
       onSuccess()
     },

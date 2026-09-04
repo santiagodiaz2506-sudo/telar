@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
 import * as React from 'react'
-import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -16,45 +15,38 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ApiError } from '@/lib/api'
-import { createAccount } from '@/lib/endpoints'
+import { createTeam } from '@/lib/endpoints'
 import { queryKeys } from '@/lib/queryKeys'
 
-/** Crear cuenta es exclusivo de superadmin: es el alta de un cliente nuevo. */
-export function NewAccountDialog({
+export function CreateTeamDialog({
+  accountId,
   open,
   onOpenChange,
-  goToAccount = true,
 }: {
+  accountId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  goToAccount?: boolean
 }) {
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
   const [name, setName] = React.useState('')
 
   const create = useMutation({
-    mutationFn: () => createAccount(name.trim()),
-    onSuccess: (account) => {
-      toast.success(`Cuenta "${account.name}" creada`)
-      queryClient.invalidateQueries({ queryKey: queryKeys.accounts() })
+    mutationFn: () => createTeam(accountId, name.trim()),
+    onSuccess: () => {
+      toast.success('Equipo creado')
+      queryClient.invalidateQueries({ queryKey: queryKeys.teams(accountId) })
       setName('')
       onOpenChange(false)
-      if (goToAccount) navigate(`/accounts/${account.id}/conversations`)
     },
-    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo crear la cuenta'),
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo crear el equipo'),
   })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Crear cuenta</DialogTitle>
-          <DialogDescription>
-            Una cuenta es un cliente: tiene sus propias conversaciones, su bot, sus tools y su base
-            de conocimiento. Después hay que registrarle un número en la tabla{' '}
-            <code className="font-mono text-[12px]">inboxes</code>.
-          </DialogDescription>
+          <DialogTitle>Crear equipo</DialogTitle>
+          <DialogDescription>Por ejemplo: Soporte, Ventas, Postventa.</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-4"
@@ -64,12 +56,11 @@ export function NewAccountDialog({
           }}
         >
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="account-name">Nombre</Label>
+            <Label htmlFor="team-name">Nombre</Label>
             <Input
-              id="account-name"
+              id="team-name"
               required
               autoFocus
-              placeholder="Mi empresa"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -80,7 +71,7 @@ export function NewAccountDialog({
             </Button>
             <Button type="submit" size="sm" disabled={create.isPending || !name.trim()}>
               {create.isPending && <Loader2 className="animate-spin" />}
-              Crear cuenta
+              Crear
             </Button>
           </DialogFooter>
         </form>

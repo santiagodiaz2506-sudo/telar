@@ -28,6 +28,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { ApiError } from '@/lib/api'
+import { queryKeys } from '@/lib/queryKeys'
 import {
   activateLlmProvider,
   createLlmProvider,
@@ -52,7 +53,7 @@ export function LlmProvidersTab({ accountId }: { accountId: string }) {
   const queryClient = useQueryClient()
 
   const { data: providers, isLoading } = useQuery({
-    queryKey: ['llm-providers', accountId],
+    queryKey: queryKeys.llmProviders(accountId),
     queryFn: () => getLlmProviders(accountId),
   })
 
@@ -62,7 +63,7 @@ export function LlmProvidersTab({ accountId }: { accountId: string }) {
       toast.success('Proveedor activado', {
         description: 'El bot de esta cuenta usa este modelo desde ahora.',
       })
-      queryClient.invalidateQueries({ queryKey: ['llm-providers', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.llmProviders(accountId) })
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo activar'),
   })
@@ -289,7 +290,7 @@ export function CreateProviderDialog({
       }),
     onSuccess: () => {
       toast.success('Proveedor creado')
-      queryClient.invalidateQueries({ queryKey: ['llm-providers', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.llmProviders(accountId) })
       reset()
       onOpenChange(false)
     },
@@ -429,7 +430,7 @@ export function EditProviderDialog({
       }),
     onSuccess: () => {
       toast.success('Proveedor actualizado')
-      queryClient.invalidateQueries({ queryKey: ['llm-providers', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.llmProviders(accountId) })
       onOpenChange(false)
     },
     onError: (e) =>
@@ -531,7 +532,7 @@ function DeleteProviderDialog({
     mutationFn: () => deleteLlmProvider(accountId, provider!.id),
     onSuccess: () => {
       toast.success('Proveedor eliminado')
-      queryClient.invalidateQueries({ queryKey: ['llm-providers', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.llmProviders(accountId) })
       onOpenChange(false)
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo eliminar'),

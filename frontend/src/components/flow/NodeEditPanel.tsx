@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { getLlmProviders } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import type { AgentNodeData } from '@/lib/flowGraph'
 import { cn } from '@/lib/utils'
 import type { AvailableToolResponse } from '@/types/api'
@@ -202,7 +203,7 @@ function ModelSection({ accountId }: { accountId: string }) {
   const [editing, setEditing] = React.useState(false)
 
   const { data: providers, isLoading } = useQuery({
-    queryKey: ['llm-providers', accountId],
+    queryKey: queryKeys.llmProviders(accountId),
     queryFn: () => getLlmProviders(accountId),
   })
 

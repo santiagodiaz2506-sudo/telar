@@ -16,6 +16,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { getContacts, getConversations, PAGE_SIZE } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import { formatPhone } from '@/lib/format'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 
@@ -25,7 +26,7 @@ export function ContactsPage() {
   const debouncedQuery = useDebouncedValue(query.trim(), 300)
 
   const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['contacts', accountId, debouncedQuery],
+    queryKey: queryKeys.contacts(accountId!, debouncedQuery),
     queryFn: ({ pageParam }) =>
       getContacts(accountId!, { offset: pageParam, q: debouncedQuery || undefined }),
     initialPageParam: 0,
@@ -38,7 +39,7 @@ export function ContactsPage() {
 
   /* Para poder saltar del contacto a su conversación sin buscarla a mano. */
   const { data: conversations } = useQuery({
-    queryKey: ['conversations', accountId, 'all'],
+    queryKey: queryKeys.conversations.all(accountId!),
     queryFn: () => getConversations(accountId!),
     enabled: !!accountId,
   })

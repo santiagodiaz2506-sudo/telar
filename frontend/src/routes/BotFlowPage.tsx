@@ -14,7 +14,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Braces, History, Loader2, Plus, RotateCcw, Save, TestTube2, X } from 'lucide-react'
+import { Braces, History, Info, Loader2, Plus, RotateCcw, Save, TestTube2, X } from 'lucide-react'
 import * as React from 'react'
 import { useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -65,6 +65,7 @@ import {
 } from '@/lib/flowGraph'
 import { shortTimestamp } from '@/lib/format'
 import { isAdmin } from '@/lib/roles'
+import { queryKeys } from '@/lib/queryKeys'
 import { useTheme } from '@/lib/theme'
 
 const nodeTypes = { agent: AgentNode, endpoint: EndpointNode, trigger: TriggerNode }
@@ -84,13 +85,13 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
   const [dirty, setDirty] = React.useState(false)
   const [notes, setNotes] = React.useState('')
 
-  const { data: bot } = useQuery({ queryKey: ['bot', accountId], queryFn: () => getBot(accountId) })
+  const { data: bot } = useQuery({ queryKey: queryKeys.bot(accountId), queryFn: () => getBot(accountId) })
   const { data: availableTools } = useQuery({
-    queryKey: ['available-tools', accountId],
+    queryKey: queryKeys.availableTools(accountId),
     queryFn: () => getAvailableTools(accountId),
   })
   const { data: inboxes } = useQuery({
-    queryKey: ['inboxes', accountId],
+    queryKey: queryKeys.inboxes(accountId),
     queryFn: () => getInboxes(accountId),
   })
 
@@ -141,8 +142,8 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
       setDirty(false)
       setNotes('')
       toast.success('Hilo guardado', { description: 'Los cambios ya están activos.' })
-      queryClient.invalidateQueries({ queryKey: ['bot', accountId] })
-      queryClient.invalidateQueries({ queryKey: ['bot-versions', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.bot(accountId) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.botVersions(accountId) })
     },
     onError: (e) => {
       toast.error(e instanceof ApiError ? e.message : 'No se pudo guardar el hilo')
@@ -166,7 +167,7 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
     setDirty(false)
     setNotes('')
     queryClient.setQueryData(['bot', accountId], fresh)
-    queryClient.invalidateQueries({ queryKey: ['bot-versions', accountId] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.botVersions(accountId) })
   }
 
   const onConnect = React.useCallback(
@@ -300,6 +301,16 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
         </div>
       </header>
 
+      {/* Aviso fijo, no flotante: hay que verlo antes de empezar a armar el flujo,
+          no solo si se lo nota flotando sobre el canvas. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border bg-surface-2 px-5 py-2 text-[12.5px] text-muted-foreground">
+        <Info className="size-3.5 shrink-0" />
+        <p>
+          Cadena lineal: cada nodo se conecta a lo sumo a uno solo, sin ramas condicionales. El
+          nodo de inicio es la conexión de WhatsApp — clic en cualquier nodo para editarlo.
+        </p>
+      </div>
+
       <div className="flex min-h-0 flex-1">
         <div className="relative min-h-0 min-w-0 flex-1">
           <ReactFlow
@@ -327,10 +338,6 @@ function BotFlowEditor({ accountId }: { accountId: string }) {
             />
           </ReactFlow>
 
-          <p className="pointer-events-none absolute top-3 left-3 rounded-md border border-border bg-surface/90 px-2.5 py-1.5 text-[11px] text-muted-foreground backdrop-blur">
-            Cadena lineal: cada nodo se conecta a uno solo. El nodo de inicio es la conexión de
-            WhatsApp -- clic en cualquier nodo para editarlo.
-          </p>
         </div>
 
         {showJson && (
@@ -415,14 +422,14 @@ function BotVersionsDialog({
   onActivated: () => void
 }) {
   const { data: versions, isLoading } = useQuery({
-    queryKey: ['bot-versions', accountId],
+    queryKey: queryKeys.botVersions(accountId),
     queryFn: () => getBotVersions(accountId),
     enabled: open,
   })
 
   /* Solo para mostrar un nombre en vez del uuid de created_by. */
   const { data: members } = useQuery({
-    queryKey: ['members', accountId],
+    queryKey: queryKeys.members(accountId),
     queryFn: () => getMembers(accountId),
     enabled: open,
     staleTime: 60_000,

@@ -3,19 +3,13 @@ import * as React from 'react'
 
 import { StatusBadge, statusHint } from '@/components/StatusBadge'
 import { ContactAvatar } from '@/components/ui/avatar'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { formatPhone } from '@/lib/format'
 import type { ServiceWindow } from '@/lib/serviceWindow'
 import { cn } from '@/lib/utils'
 import type { ConversationDetailResponse } from '@/types/api'
 
-export function ContactPanel({
-  conversation,
-  contactName,
-  contactPhone,
-  assigneeName,
-  serviceWindow: sw,
-  messagesLoaded,
-}: {
+interface ContactPanelProps {
   conversation: ConversationDetailResponse
   contactName: string
   contactPhone: string | null
@@ -23,12 +17,52 @@ export function ContactPanel({
   serviceWindow: ServiceWindow
   /** Incluye el historial viejo ya traído con "Cargar mensajes anteriores". */
   messagesLoaded: number
-}) {
+}
+
+/** Aside fijo con los datos del contacto, visible desde el breakpoint xl para arriba. */
+export function ContactPanel(props: ContactPanelProps) {
   return (
     <aside
       className="hidden w-[276px] shrink-0 flex-col overflow-y-auto border-l border-border bg-surface xl:flex"
       aria-label="Datos del contacto"
     >
+      <ContactPanelBody {...props} />
+    </aside>
+  )
+}
+
+/**
+ * Mismos datos que ContactPanel, en un diálogo. Por debajo de xl el aside se
+ * oculta del todo -- esto le da a esa información un lugar al que ir en vez
+ * de desaparecer.
+ */
+export function ContactInfoDialog({
+  open,
+  onOpenChange,
+  ...props
+}: ContactPanelProps & { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] gap-0 overflow-y-auto p-0">
+        <DialogHeader className="px-5 pt-5 pb-4">
+          <DialogTitle>Datos del contacto</DialogTitle>
+        </DialogHeader>
+        <ContactPanelBody {...props} />
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function ContactPanelBody({
+  conversation,
+  contactName,
+  contactPhone,
+  assigneeName,
+  serviceWindow: sw,
+  messagesLoaded,
+}: ContactPanelProps) {
+  return (
+    <>
       <div className="flex flex-col items-center gap-3 border-b border-border px-5 py-6 text-center">
         <ContactAvatar seed={conversation.contact_id} name={contactName} size="xl" />
         <div className="min-w-0">
@@ -74,7 +108,7 @@ export function ContactPanel({
         <Field label="ID de conversación" value={conversation.id} mono copyable />
         <Field label="Mensajes cargados" value={String(messagesLoaded)} />
       </dl>
-    </aside>
+    </>
   )
 }
 

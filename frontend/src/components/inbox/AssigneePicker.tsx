@@ -12,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { getMembers } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import { ROLE_LABEL } from '@/lib/roles'
 
 /**
@@ -30,7 +31,7 @@ export function AssigneePicker({
   onAssign: (userId: string | undefined) => void
 }) {
   const { data: members } = useQuery({
-    queryKey: ['members', accountId],
+    queryKey: queryKeys.members(accountId),
     queryFn: () => getMembers(accountId),
     staleTime: 60_000,
   })

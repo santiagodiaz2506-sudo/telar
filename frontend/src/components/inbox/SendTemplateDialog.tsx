@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { ApiError } from '@/lib/api'
 import { getTemplates, sendTemplateMessage } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 
 /**
  * Fuera de la ventana de 24h, Meta solo deja iniciar con una plantilla ya
@@ -40,7 +41,7 @@ export function SendTemplateDialog({
   const [params, setParams] = React.useState<Record<string, string>>({})
 
   const { data: templates, isLoading } = useQuery({
-    queryKey: ['templates', accountId],
+    queryKey: queryKeys.templates(accountId),
     queryFn: () => getTemplates(accountId),
     enabled: open,
   })

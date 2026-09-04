@@ -28,6 +28,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { ApiError } from '@/lib/api'
 import { createTemplate, deleteTemplate, getTemplates } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import type { TemplateComponent, TemplateResponse } from '@/types/api'
 
 const COMPONENTS_PLACEHOLDER =
@@ -60,7 +61,7 @@ export function TemplatesTab({ accountId }: { accountId: string }) {
   const [deleting, setDeleting] = React.useState<TemplateResponse | null>(null)
 
   const { data: templates, isLoading } = useQuery({
-    queryKey: ['templates', accountId],
+    queryKey: queryKeys.templates(accountId),
     queryFn: () => getTemplates(accountId),
   })
 
@@ -195,7 +196,7 @@ function CreateTemplateDialog({
     },
     onSuccess: () => {
       toast.success('Plantilla registrada')
-      queryClient.invalidateQueries({ queryKey: ['templates', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.templates(accountId) })
       reset()
       onOpenChange(false)
     },
@@ -306,7 +307,7 @@ function DeleteTemplateDialog({
     mutationFn: () => deleteTemplate(accountId, template!.id),
     onSuccess: () => {
       toast.success('Plantilla eliminada')
-      queryClient.invalidateQueries({ queryKey: ['templates', accountId] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.templates(accountId) })
       onOpenChange(false)
     },
     onError: (e) => toast.error(e instanceof ApiError ? e.message : 'No se pudo eliminar'),

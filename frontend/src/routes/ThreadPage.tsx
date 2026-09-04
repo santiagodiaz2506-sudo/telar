@@ -5,6 +5,7 @@ import {
   Clock,
   FileText,
   Hand,
+  Info,
   Loader2,
   Lock,
   MessageSquareDashed,
@@ -17,7 +18,7 @@ import { toast } from 'sonner'
 import { EmptyState } from '@/components/EmptyState'
 import { AssigneePicker } from '@/components/inbox/AssigneePicker'
 import { Composer } from '@/components/inbox/Composer'
-import { ContactPanel } from '@/components/inbox/ContactPanel'
+import { ContactInfoDialog, ContactPanel } from '@/components/inbox/ContactPanel'
 import { DaySeparator, MessageBubble } from '@/components/inbox/MessageBubble'
 import { SendTemplateDialog } from '@/components/inbox/SendTemplateDialog'
 import { StatusBadge } from '@/components/StatusBadge'
@@ -37,6 +38,7 @@ import {
 } from '@/lib/endpoints'
 import { dayKey, dayLabel, formatPhone } from '@/lib/format'
 import { isElevated } from '@/lib/roles'
+import { queryKeys } from '@/lib/queryKeys'
 import { serviceWindow } from '@/lib/serviceWindow'
 import type { MessageResponse } from '@/types/api'
 
@@ -52,6 +54,7 @@ export function ThreadPage() {
   const queryClient = useQueryClient()
   const [busy, setBusy] = React.useState(false)
   const [templateDialogOpen, setTemplateDialogOpen] = React.useState(false)
+  const [contactInfoOpen, setContactInfoOpen] = React.useState(false)
   const bottomRef = React.useRef<HTMLDivElement>(null)
 
   const [olderMessages, setOlderMessages] = React.useState<MessageResponse[]>([])
@@ -61,7 +64,7 @@ export function ThreadPage() {
   const scrollAdjustRef = React.useRef<number | null>(null)
 
   const { data: conv, isLoading } = useQuery({
-    queryKey: ['conversation', accountId, conversationId],
+    queryKey: queryKeys.conversation(accountId!, conversationId!),
     queryFn: () => getConversationDetail(accountId!, conversationId!),
     enabled: !!accountId && !!conversationId,
     // Igual que en InboxLayout: con historial viejo ya cargado, un refresco
@@ -119,7 +122,7 @@ export function ThreadPage() {
   /* Los nombres del equipo solo hacen falta si podés reasignar o si querés
      saber quién tiene la conversación. */
   const { data: members } = useQuery({
-    queryKey: ['members', accountId],
+    queryKey: queryKeys.members(accountId!),
     queryFn: () => getMembers(accountId!),
     enabled: !!accountId,
     staleTime: 60_000,
@@ -130,9 +133,9 @@ export function ThreadPage() {
   }, [conv?.messages.length, conversationId])
 
   const invalidate = React.useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ['conversation', accountId, conversationId] })
-    queryClient.invalidateQueries({ queryKey: ['conversations', accountId] })
-    queryClient.invalidateQueries({ queryKey: ['stats', accountId] })
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversation(accountId!, conversationId!) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.conversations.byAccount(accountId!) })
+    queryClient.invalidateQueries({ queryKey: queryKeys.stats(accountId!) })
   }, [queryClient, accountId, conversationId])
 
   const runAction = React.useCallback(
@@ -210,6 +213,19 @@ export function ThreadPage() {
             size="sm"
             className="hidden shrink-0 sm:inline-flex xl:hidden"
           />
+
+          {/* Por debajo de xl el aside de datos del contacto está oculto del
+              todo -- este botón le da esa información un lugar al que ir. */}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0 xl:hidden"
+            title="Datos del contacto"
+            aria-label="Datos del contacto"
+            onClick={() => setContactInfoOpen(true)}
+          >
+            <Info />
+          </Button>
 
           <div className="flex shrink-0 items-center gap-2">
             {conv.status !== 'open' && (
@@ -347,6 +363,17 @@ export function ThreadPage() {
       />
 
       <ContactPanel
+        conversation={conv}
+        contactName={contactName}
+        contactPhone={conv.contact_phone}
+        assigneeName={assigneeName}
+        serviceWindow={sw}
+        messagesLoaded={allMessages.length}
+      />
+
+      <ContactInfoDialog
+        open={contactInfoOpen}
+        onOpenChange={setContactInfoOpen}
         conversation={conv}
         contactName={contactName}
         contactPhone={conv.contact_phone}

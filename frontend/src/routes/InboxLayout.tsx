@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAuth } from '@/lib/auth'
 import { getConversations, getStats, getTeams, PAGE_SIZE } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { cn } from '@/lib/utils'
 import type { ConversationStatusValue } from '@/types/api'
@@ -52,7 +53,7 @@ export function InboxLayout() {
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ['conversations', accountId, 'list', filter, teamId, debouncedQuery],
+    queryKey: queryKeys.conversations.list(accountId!, filter, teamId, debouncedQuery),
     queryFn: ({ pageParam }) =>
       getConversations(accountId!, filter === 'all' ? undefined : filter, {
         offset: pageParam,
@@ -63,22 +64,24 @@ export function InboxLayout() {
     getNextPageParam: (lastPage, allPages) =>
       (lastPage?.length ?? 0) < PAGE_SIZE ? undefined : allPages.length * PAGE_SIZE,
     enabled: !!accountId,
-    // Un refresco de fondo vuelve a pedir TODAS las páginas cargadas. Mientras
-    // se está en la primera vale la pena; después se corta y queda el botón.
-    refetchInterval: (query) => ((query.state.data?.pages.length ?? 1) > 1 ? false : 8000),
+    // Un refresco de fondo vuelve a pedir TODAS las páginas cargadas, así que
+    // con varias páginas se espacía en vez de darle la misma cadencia que a la
+    // primera -- pero nunca se apaga del todo, para no perder conversaciones
+    // nuevas de vista mientras un agente se queda scrolleado más abajo.
+    refetchInterval: (query) => ((query.state.data?.pages.length ?? 1) > 1 ? 30000 : 8000),
   })
 
   const conversations = React.useMemo(() => data?.pages.flat(), [data])
 
   const { data: stats } = useQuery({
-    queryKey: ['stats', accountId],
+    queryKey: queryKeys.stats(accountId!),
     queryFn: () => getStats(accountId!),
     enabled: !!accountId,
     refetchInterval: 8000,
   })
 
   const { data: teams } = useQuery({
-    queryKey: ['teams', accountId],
+    queryKey: queryKeys.teams(accountId!),
     queryFn: () => getTeams(accountId!),
     enabled: !!accountId,
   })
@@ -302,7 +305,7 @@ export function InboxLayout() {
               </p>
               {(data?.pages.length ?? 1) > 1 && (
                 <p className="text-center text-[11px] text-muted-foreground/70">
-                  El refresco automático se pausa mientras haya más de una página cargada.
+                  El refresco automático es más espaciado mientras haya más de una página cargada.
                 </p>
               )}
             </div>

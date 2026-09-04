@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Navigate } from 'react-router-dom'
 
 import { getAccounts } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import { useAuth } from '@/lib/auth'
 import { BootScreen } from '@/routes/AccountLayout'
 
@@ -9,7 +10,7 @@ import { BootScreen } from '@/routes/AccountLayout'
 export function RootRedirect() {
   const { user, loading: authLoading } = useAuth()
   const { data: accounts, isLoading } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: queryKeys.accounts(),
     queryFn: getAccounts,
     enabled: !!user,
   })

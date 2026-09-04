@@ -33,6 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useAuth } from '@/lib/auth'
 import { getAccounts, getStats } from '@/lib/endpoints'
 import { isAdmin, ROLE_LABEL } from '@/lib/roles'
+import { queryKeys } from '@/lib/queryKeys'
 import { cn } from '@/lib/utils'
 
 const COLLAPSE_KEY = 'telar-sidebar-collapsed'
@@ -52,9 +53,9 @@ export function Sidebar({ accountId, role }: { accountId: string; role: string |
   )
   const [creatingAccount, setCreatingAccount] = React.useState(false)
 
-  const { data: accounts } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts } = useQuery({ queryKey: queryKeys.accounts(), queryFn: getAccounts })
   const { data: stats } = useQuery({
-    queryKey: ['stats', accountId],
+    queryKey: queryKeys.stats(accountId),
     queryFn: () => getStats(accountId),
     refetchInterval: 8000,
   })

@@ -27,6 +27,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { getInboxes, getTeams } from '@/lib/endpoints'
+import { queryKeys } from '@/lib/queryKeys'
 import { shortTimestamp } from '@/lib/format'
 import type { InboxResponse } from '@/types/api'
 
@@ -36,12 +37,12 @@ export function InboxesTab({ accountId }: { accountId: string }) {
   const [rotating, setRotating] = React.useState<InboxResponse | null>(null)
 
   const { data: inboxes, isLoading } = useQuery({
-    queryKey: ['inboxes', accountId],
+    queryKey: queryKeys.inboxes(accountId),
     queryFn: () => getInboxes(accountId),
   })
 
   const { data: teams } = useQuery({
-    queryKey: ['teams', accountId],
+    queryKey: queryKeys.teams(accountId),
     queryFn: () => getTeams(accountId),
   })
 
