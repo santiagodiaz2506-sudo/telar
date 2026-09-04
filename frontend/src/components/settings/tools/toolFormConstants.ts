@@ -17,7 +17,7 @@ export const DOCUMENT_TEXT_PLACEHOLDER =
 
 export const KIND_HINT: Record<ToolKind, string> = {
   http: 'Llama una API externa que ya tenés.',
-  sql: 'Consulta tu propia base de datos, siempre de solo lectura.',
+  sql: 'Consulta tu propia base de datos Postgres, siempre de solo lectura.',
   document: 'Un documento de referencia. Sin embeddings ni proveedor de LLM externo.',
 }
 

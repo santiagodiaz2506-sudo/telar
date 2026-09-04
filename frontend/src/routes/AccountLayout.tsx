@@ -1,23 +1,33 @@
 import { Navigate, Outlet, useParams } from 'react-router-dom'
 
 import { Logo } from '@/components/Logo'
+import { OfflineBanner } from '@/components/layout/OfflineBanner'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { useAuth } from '@/lib/auth'
+import { useNewMessageTitleAlert } from '@/lib/useNewMessageTitleAlert'
 
 export function AccountLayout() {
   const { accountId } = useParams<{ accountId: string }>()
   const { user, loading, roleForAccount } = useAuth()
+
+  // Antes de cualquier return condicional -- el hook necesita correr
+  // siempre, aunque accountId todavía no esté resuelto (internamente no
+  // hace nada hasta entonces).
+  useNewMessageTitleAlert(accountId)
 
   if (loading) return <BootScreen />
   if (!user) return <Navigate to="/login" replace />
   if (!accountId) return <Navigate to="/" replace />
 
   return (
-    <div className="flex h-svh overflow-hidden bg-background">
-      <Sidebar accountId={accountId} role={roleForAccount(accountId)} />
-      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <Outlet />
-      </main>
+    <div className="flex h-svh flex-col overflow-hidden bg-background">
+      <OfflineBanner />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar accountId={accountId} role={roleForAccount(accountId)} />
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <Outlet />
+        </main>
+      </div>
     </div>
   )
 }

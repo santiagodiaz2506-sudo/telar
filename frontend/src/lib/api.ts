@@ -1,3 +1,5 @@
+import { reportApiNetworkFailure, reportApiSuccess } from '@/lib/networkStatus'
+
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 const TOKEN_KEY = 'telar_token'
 
@@ -39,7 +41,18 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
     headers.set('Authorization', `Bearer ${token}`)
   }
 
-  const resp = await fetch(`${API_URL}${path}`, { ...init, headers })
+  let resp: Response
+  try {
+    resp = await fetch(`${API_URL}${path}`, { ...init, headers })
+  } catch (e) {
+    // fetch() solo tira acá cuando ni siquiera hubo respuesta del server:
+    // DNS, conexión rechazada, timeout de red, CORS. Un 4xx/5xx real del
+    // backend no pasa por acá -- eso es una respuesta válida, solo que
+    // con un status de error (se maneja más abajo).
+    reportApiNetworkFailure()
+    throw e
+  }
+  reportApiSuccess() // hubo respuesta del server: la red anda, sea cual sea el status
 
   if (resp.status === 401) {
     clearToken()
